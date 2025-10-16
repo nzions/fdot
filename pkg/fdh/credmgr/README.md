@@ -73,9 +73,31 @@ names, err := credmgr.List()
 ## Implementation Notes
 
 ### Linux Kernel Keyring
-- Uses user keyring (`KEY_SPEC_USER_KEYRING`) for persistence
-- Requires appropriate user permissions (should work for any user)
-- Data visible in `/proc/keys` (for debugging)
+
+This implementation uses the Linux kernel keyring system with careful attention to its permission model.
+
+**Permission Model:**
+- Keys have 4 permission levels: possessor, owner, group, other
+- Default permissions: `possessor=alswrv` (full access), `owner=v` (view only)
+- **Important**: Matching owner UID is NOT enough to read keys!
+- You need "possession" - granted when key is reachable from your session keyring
+
+**How It Works:**
+1. Credentials are stored in the user keyring (`@u`) for persistence
+2. User keyring is linked into the session keyring (`@s`) via `KEYCTL_LINK`
+3. This linking grants "possession", allowing `request_key()` to find and read keys
+4. Without the link, even the owner UID cannot read the key content
+
+**References:**
+- Man pages: `keyctl(2)`, `keyrings(7)`, `add_key(2)`, `request_key(2)`
+- Stack Overflow: https://stackoverflow.com/a/79389296
+- Kernel docs: https://www.kernel.org/doc/html/latest/security/keys/core.html
+
+**Debugging:**
+- View your keyrings: `keyctl show`
+- View a specific key: `keyctl describe <keyid>`
+- List user keyring: `keyctl list @u`
+- Check if linked: `keyctl show` should show `_uid.XXX` under `_ses`
 
 ### Windows Credential Manager
 - Uses `CRED_TYPE_GENERIC` for application credentials  

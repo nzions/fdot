@@ -64,10 +64,9 @@ func utf16PtrToString(ptr *uint16) string {
 	return syscall.UTF16ToString(utf16Slice)
 }
 
-// readCredential retrieves a credential from Windows Credential Manager
+// readCredential retrieves a credential from Windows Credential Manager.
 func readCredential(name string) ([]byte, error) {
-	targetName := name
-	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
+	targetNamePtr, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert target name: %w", err)
 	}
@@ -76,7 +75,7 @@ func readCredential(name string) ([]byte, error) {
 	ret, _, _ := procCredReadW.Call(
 		uintptr(unsafe.Pointer(targetNamePtr)),
 		uintptr(credTypeGeneric),
-		0, // flags (reserved)
+		0,
 		uintptr(unsafe.Pointer(&cred)),
 	)
 
@@ -89,17 +88,15 @@ func readCredential(name string) ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	// Copy the credential data
 	data := make([]byte, cred.CredentialBlobSize)
 	copy(data, (*[1 << 30]byte)(unsafe.Pointer(cred.CredentialBlob))[:cred.CredentialBlobSize:cred.CredentialBlobSize])
 
 	return data, nil
 }
 
-// writeCredential stores a credential in Windows Credential Manager
+// writeCredential stores a credential in Windows Credential Manager.
 func writeCredential(name string, data []byte) error {
-	targetName := name
-	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
+	targetNamePtr, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return fmt.Errorf("failed to convert target name: %w", err)
 	}
@@ -119,20 +116,19 @@ func writeCredential(name string, data []byte) error {
 
 	ret, _, _ := procCredWriteW.Call(
 		uintptr(unsafe.Pointer(&cred)),
-		0, // flags (reserved)
+		0,
 	)
 
 	if ret == 0 {
-		return fmt.Errorf("failed to write credential: %s", targetName)
+		return fmt.Errorf("failed to write credential: %s", name)
 	}
 
 	return nil
 }
 
-// deleteCredential removes a credential from Windows Credential Manager
+// deleteCredential removes a credential from Windows Credential Manager.
 func deleteCredential(name string) error {
-	targetName := name
-	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
+	targetNamePtr, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return fmt.Errorf("failed to convert target name: %w", err)
 	}
@@ -140,7 +136,7 @@ func deleteCredential(name string) error {
 	ret, _, _ := procCredDeleteW.Call(
 		uintptr(unsafe.Pointer(targetNamePtr)),
 		uintptr(credTypeGeneric),
-		0, // flags (reserved)
+		0,
 	)
 
 	if ret == 0 {
@@ -150,31 +146,29 @@ func deleteCredential(name string) error {
 	return nil
 }
 
-// listCredentials retrieves all generic credentials from Windows Credential Manager
+// listCredentials retrieves all generic credentials from Windows Credential Manager.
 func listCredentials() ([]string, error) {
 	var count uint32
 	var creds **credential
 
 	ret, _, _ := procCredEnumerateW.Call(
-		0, // filter (null for all)
-		0, // flags (reserved)
+		0,
+		0,
 		uintptr(unsafe.Pointer(&count)),
 		uintptr(unsafe.Pointer(&creds)),
 	)
 
 	if ret == 0 {
-		return []string{}, nil // No credentials found
+		return []string{}, nil
 	}
 	defer procCredFree.Call(uintptr(unsafe.Pointer(creds)))
 
-	// Convert array of credential pointers to slice
 	credSlice := (*[1 << 20]*credential)(unsafe.Pointer(creds))[:count:count]
+	names := make([]string, 0, count)
 
-	var names []string
 	for _, cred := range credSlice {
 		if cred.Type == credTypeGeneric {
-			fullName := utf16PtrToString(cred.TargetName)
-			names = append(names, fullName)
+			names = append(names, utf16PtrToString(cred.TargetName))
 		}
 	}
 

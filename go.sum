@@ -1,6 +1,0 @@
-github.com/nzions/dsjdb v0.0.0-20251016155548-4d613974bb2d h1:j0X7K+iE53uxTkJ6G0NfdmvsSoPwwUylBPY9myLvRU8=
-github.com/nzions/dsjdb v0.0.0-20251016155548-4d613974bb2d/go.mod h1:vL6plbGAUjJ0mtxd6Qe2Zvp3r9jCDU37D7I13OclyCE=
-golang.org/x/crypto v0.43.0 h1:dduJYIi3A3KOfdGOHX8AVZ/jGiyPa3IbBozJ5kNuE04=
-golang.org/x/crypto v0.43.0/go.mod h1:BFbav4mRNlXJL4wNeejLpWxB7wMbc79PdRGhWKncxR0=
-golang.org/x/sys v0.37.0 h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=
-golang.org/x/sys v0.37.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
