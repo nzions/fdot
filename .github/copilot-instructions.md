@@ -62,6 +62,7 @@ This is a Go project using Go 1.24.4 with standard project structure:
 - Document complex algorithms or business logic
 
 ### Build & Deployment
+- ALWAYS compile binaries to `<project root>/bin/` directory using `-o bin/<binary-name>`
 - Use `go build` for production builds
 - Set appropriate build flags for releases: `-ldflags="-s -w"`
 - Use `go generate` for code generation when needed
@@ -94,4 +95,5 @@ This is a Go project using Go 1.24.4 with standard project structure:
 - ALWAYS use latest go version features
 - ALWAYS use go 1.22+ web mux
 - ALWAYS use any instead of interface{}
+- ALWAYS compile binaries to `<project root>/bin/` directory
 - NEVER use deprecated or outdated libraries
