@@ -42,12 +42,27 @@ func WriteString(name, value string) error
 - **Security**: Windows built-in credential encryption
 
 ### Linux  
-- **Backend**: Linux kernel keyring system
-- **Storage**: `add_key`, `request_key`, `keyctl` syscalls
-- **Persistence**: User keyring (persistent across sessions)
-- **Security**: Kernel-level isolation and permissions
+- **Backend**: AES-256-GCM encrypted file storage
+- **Storage**: `~/.local/share/fdot/credentials.enc` (file permissions: 0600)
+- **Encryption Key**: Environment variable `FDOT_CREDENTIAL_KEY` (64 hex chars)
+- **Persistence**: File-based (survives reboots)
+- **Security**: AES-256-GCM authenticated encryption
 
 ## Usage
+
+### Linux Setup
+
+First, generate and set your encryption key:
+
+```bash
+# Generate a random 32-byte key (do this once)
+openssl rand -hex 32
+
+# Set it in your environment (add to ~/.bashrc or ~/.profile)
+export FDOT_CREDENTIAL_KEY="your-64-hex-character-key-here"
+```
+
+### Example Code
 
 ```go
 import "github.com/nzions/fdot/pkg/fdh/credmgr"
@@ -72,32 +87,35 @@ names, err := credmgr.List()
 
 ## Implementation Notes
 
-### Linux Kernel Keyring
+### Linux: AES-256-GCM Encrypted File Storage
 
-This implementation uses the Linux kernel keyring system with careful attention to its permission model.
+**Storage Location:**
+- File: `~/.local/share/fdot/credentials.enc`
+- Permissions: `0600` (owner read/write only)
+- Directory permissions: `0700`
 
-**Permission Model:**
-- Keys have 4 permission levels: possessor, owner, group, other
-- Default permissions: `possessor=alswrv` (full access), `owner=v` (view only)
-- **Important**: Matching owner UID is NOT enough to read keys!
-- You need "possession" - granted when key is reachable from your session keyring
+**Encryption:**
+- Algorithm: AES-256-GCM (Galois/Counter Mode)
+- Key size: 256 bits (32 bytes)
+- Key source: `FDOT_CREDENTIAL_KEY` environment variable
+- Format: 64 hexadecimal characters
+- Authenticated encryption: Protects against tampering
 
-**How It Works:**
-1. Credentials are stored in the user keyring (`@u`) for persistence
-2. User keyring is linked into the session keyring (`@s`) via `KEYCTL_LINK`
-3. This linking grants "possession", allowing `request_key()` to find and read keys
-4. Without the link, even the owner UID cannot read the key content
+**Security Model:**
+- ✅ Encrypted at rest
+- ✅ Per-user file isolation (Unix permissions)
+- ✅ Persists across reboots
+- ✅ Protection against casual file viewing
+- ❌ Does NOT protect against root access
+- ❌ Does NOT protect if attacker has both file AND key
+- ⚠️ Key management is user's responsibility
 
-**References:**
-- Man pages: `keyctl(2)`, `keyrings(7)`, `add_key(2)`, `request_key(2)`
-- Stack Overflow: https://stackoverflow.com/a/79389296
-- Kernel docs: https://www.kernel.org/doc/html/latest/security/keys/core.html
+**Design Rationale:**
+Previous implementation used Linux kernel keyrings, which provided excellent RAM-based
+security but did NOT persist across reboots. This file-based approach matches Windows
+Credential Manager behavior (persistence + reasonable security for development credentials).
 
-**Debugging:**
-- View your keyrings: `keyctl show`
-- View a specific key: `keyctl describe <keyid>`
-- List user keyring: `keyctl list @u`
-- Check if linked: `keyctl show` should show `_uid.XXX` under `_ses`
+For archived kernel keyring implementation, see: `docs/linux-kernel-keyring.bak/`
 
 ### Windows Credential Manager
 - Uses `CRED_TYPE_GENERIC` for application credentials  

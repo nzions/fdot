@@ -1,232 +1,353 @@
 //go:build linux
 
-// Package credmgr provides secure credential storage using Linux kernel keyrings.
+// Package credmgr provides credential management on Linux using AES-encrypted file storage.
 //
-// # Linux Kernel Keyring Permission Model
+// # Storage Architecture
 //
-// The Linux kernel keyring uses a unique permission model with 4 access levels:
-//   - possessor: Has the key reachable from their session keyring
-//   - owner:     Matches the key's owner UID
-//   - group:     Matches the key's group GID
-//   - other:     Everyone else
+// Credentials are stored in an AES-256-GCM encrypted file:
+//   - Location: ~/.local/share/fdot/credentials.enc
+//   - Format: JSON map encrypted with AES-256-GCM
+//   - Permissions: 0600 (owner read/write only)
 //
-// Default key permissions are typically: alswrv-----v------------
-//   - possessor: alswrv (all permissions: alter, link, search, write, read, view)
-//   - owner:     -----v (view only - can see it exists but cannot read content)
-//   - group:     ------ (no access)
-//   - other:     ------ (no access)
+// # Encryption Key Source
 //
-// # The "Possession" Concept
+// The encryption key MUST be provided via the FDOT_CREDENTIAL_KEY environment variable:
+//   - Format: 64 hex characters (32 bytes)
+//   - Example: export FDOT_CREDENTIAL_KEY="0123456789abcdef..."
+//   - Generate: openssl rand -hex 32
 //
-// IMPORTANT: Matching the owner UID is NOT sufficient to read a key!
-// You need "possession", which is granted when a key is reachable from your
-// process's session keyring (@s). This is THE fundamental concept of kernel keyrings.
+// If FDOT_CREDENTIAL_KEY is not set or invalid, credential operations will fail.
 //
-// When you run `keyctl show` (without arguments, showing @s), you'll see your
-// session keyring contains a link to your user keyring, shown as "_uid.XXX":
+// # Security Model
 //
-//	Session Keyring
-//	1046546095 --alswrv   1000   100  keyring: _ses
-//	 348545926 --alswrv   1000 65534   \_ keyring: _uid.1000
-//	 987654321 --alswrv   1000  1000       \_ user: my-credential
+// This provides file-based credential persistence with these properties:
+//   - Encrypted at rest (AES-256-GCM with authentication)
+//   - Per-user isolation (file permissions 0600)
+//   - Key management is user's responsibility
+//   - Protection level: Similar to Windows Credential Manager
 //
-// That _uid.1000 link is what grants you "possession" of keys stored in @u.
-// The kernel searches from @s → @u, and if the link exists, you "possess" the keys.
+// Does NOT protect against:
+//   - Root/administrator access
+//   - Attackers who obtain both the encrypted file AND the key
+//   - Memory dumps while credentials are in use
 //
-// # Why This Package Links Keyrings
+// # Design Rationale
 //
-// This package stores credentials in the user keyring (@u) for persistence, but
-// explicitly links @u into the session keyring (@s) to ensure "possession".
-// Without this link, even though you own the key (same UID), you cannot read it
-// because you lack "possession" permission.
+// Previous implementation used Linux kernel keyrings, which provide excellent
+// security but do NOT persist across reboots (they are RAM-only). This file-based
+// approach trades some security for persistence, matching Windows behavior.
 //
-// This is standard Linux kernel keyring behavior, documented in:
-//   - keyctl(2) man page: https://man7.org/linux/man-pages/man2/keyctl.2.html
-//   - keyrings(7) man page: https://man7.org/linux/man-pages/man7/keyrings.7.html
-//   - Stack Overflow explanation: https://stackoverflow.com/a/79389296
+// For development/convenience credentials (API keys, tokens, etc.), this provides
+// a reasonable balance. For high-security credentials, consider using kernel keyrings
+// (session-only) or prompting for a master password.
 //
-// Reference implementation: PAM modules (like pam_keyinit) automatically create
-// this link when you log in, which is why `keyctl add user foo bar @u` followed
-// by `keyctl read <keyid>` typically works in normal shells.
+// See docs/linux-kernel-keyring.bak/ for the archived kernel keyring implementation.
 package credmgr
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
-	"syscall"
-	"unsafe"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
 )
 
-// Linux syscall numbers for keyring operations (x86_64)
-const (
-	sysAddKey     = 248
-	sysRequestKey = 249
-	sysKeyctl     = 250
+var (
+	// In-memory cache of decrypted credentials
+	credCache      map[string][]byte
+	credCacheMutex sync.RWMutex
+	credCacheInit  sync.Once
+
+	// Cached encryption key
+	encryptionKey []byte
+	keyInitOnce   sync.Once
+	keyInitError  error
 )
 
-// keyctl operations
-const (
-	keyctlRead        = 11
-	keyctlUnlink      = 9
-	keyctlDescribe    = 6
-	keyctlSearch      = 10
-	keyctlReadAllKeys = 3
-	keyctlLink        = 8
-)
+// getEncryptionKey loads and validates the encryption key from environment variable
+func getEncryptionKey() ([]byte, error) {
+	keyInitOnce.Do(func() {
+		keyHex := os.Getenv("FDOT_CREDENTIAL_KEY")
+		if keyHex == "" {
+			keyInitError = errors.New("FDOT_CREDENTIAL_KEY environment variable not set")
+			return
+		}
 
-// Special keyring IDs
-const (
-	keySpecSessionKeyring = ^uintptr(2) // -3 as unsigned (0xFFFFFFFD)
-	keySpecUserKeyring    = ^uintptr(3) // -4 as unsigned (0xFFFFFFFC)
-)
+		key, err := hex.DecodeString(keyHex)
+		if err != nil {
+			keyInitError = fmt.Errorf("invalid FDOT_CREDENTIAL_KEY format (expected 64 hex chars): %w", err)
+			return
+		}
 
-// ensureUserKeyringLinked links the user keyring (@u) to the session keyring (@s).
-// This grants "possession" permission, allowing us to read/write/delete keys.
-// See package documentation and https://stackoverflow.com/a/79389296 for details.
-func ensureUserKeyringLinked() {
-	syscall.Syscall(sysKeyctl, keyctlLink, keySpecUserKeyring, keySpecSessionKeyring)
-	// Errors ignored - already linked or insufficient permissions
+		if len(key) != 32 {
+			keyInitError = fmt.Errorf("invalid FDOT_CREDENTIAL_KEY length (expected 32 bytes, got %d)", len(key))
+			return
+		}
+
+		encryptionKey = key
+	})
+
+	return encryptionKey, keyInitError
 }
 
-// requestKey finds a key by name and returns its ID.
-func requestKey(name string) (uintptr, error) {
-	keyTypePtr, err := syscall.BytePtrFromString("user")
+// getCredFilePath returns the path to the encrypted credentials file
+func getCredFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert key type: %w", err)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	keyNamePtr, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert key name: %w", err)
-	}
-
-	ensureUserKeyringLinked()
-
-	keyID, _, errno := syscall.Syscall6(sysRequestKey,
-		uintptr(unsafe.Pointer(keyTypePtr)),
-		uintptr(unsafe.Pointer(keyNamePtr)),
-		0, // no callout info
-		0, // search default path: @s → @u
-		0, 0)
-
-	if errno != 0 {
-		return 0, ErrNotFound
-	}
-
-	return keyID, nil
+	credDir := filepath.Join(homeDir, ".local", "share", "fdot")
+	return filepath.Join(credDir, "credentials.enc"), nil
 }
 
-// readCredential retrieves a credential from Linux kernel keyring.
-func readCredential(name string) ([]byte, error) {
-	keyID, err := requestKey(name)
-	if err != nil {
-		return nil, err
-	}
-
-	buffer := make([]byte, 4096)
-	size, _, errno := syscall.Syscall6(sysKeyctl,
-		keyctlRead,
-		keyID,
-		uintptr(unsafe.Pointer(&buffer[0])),
-		uintptr(len(buffer)),
-		0, 0)
-
-	if errno != 0 {
-		return nil, fmt.Errorf("failed to read key: %v", errno)
-	}
-
-	return buffer[:size], nil
-}
-
-// writeCredential stores a credential in Linux kernel keyring.
-func writeCredential(name string, data []byte) error {
-	keyTypePtr, err := syscall.BytePtrFromString("user")
-	if err != nil {
-		return fmt.Errorf("failed to convert key type: %w", err)
-	}
-
-	keyNamePtr, err := syscall.BytePtrFromString(name)
-	if err != nil {
-		return fmt.Errorf("failed to convert key name: %w", err)
-	}
-
-	var dataPtr *byte
-	if len(data) > 0 {
-		dataPtr = &data[0]
-	}
-
-	_, _, errno := syscall.Syscall6(sysAddKey,
-		uintptr(unsafe.Pointer(keyTypePtr)),
-		uintptr(unsafe.Pointer(keyNamePtr)),
-		uintptr(unsafe.Pointer(dataPtr)),
-		uintptr(len(data)),
-		keySpecUserKeyring,
-		0)
-
-	if errno != 0 {
-		return fmt.Errorf("failed to add key: %v", errno)
-	}
-
-	return nil
-}
-
-// deleteCredential removes a credential from Linux kernel keyring.
-func deleteCredential(name string) error {
-	keyID, err := requestKey(name)
+// ensureCredDir creates the credential directory if it doesn't exist
+func ensureCredDir() error {
+	credFile, err := getCredFilePath()
 	if err != nil {
 		return err
 	}
 
-	_, _, errno := syscall.Syscall(sysKeyctl,
-		keyctlUnlink,
-		keyID,
-		keySpecUserKeyring)
-
-	if errno != 0 {
-		return fmt.Errorf("failed to delete key: %v", errno)
+	credDir := filepath.Dir(credFile)
+	if err := os.MkdirAll(credDir, 0700); err != nil {
+		return fmt.Errorf("failed to create credential directory: %w", err)
 	}
 
 	return nil
 }
 
-// listCredentials retrieves all credential names from Linux kernel keyring.
-func listCredentials() ([]string, error) {
-	buffer := make([]byte, 4096)
-	size, _, errno := syscall.Syscall6(sysKeyctl,
-		keyctlRead,
-		keySpecUserKeyring,
-		uintptr(unsafe.Pointer(&buffer[0])),
-		uintptr(len(buffer)),
-		0, 0)
-
-	if errno != 0 {
-		return []string{}, nil
+// loadCredentials reads and decrypts the credentials file
+func loadCredentials() (map[string][]byte, error) {
+	credFile, err := getCredFilePath()
+	if err != nil {
+		return nil, err
 	}
 
-	keyCount := int(size) / 4 // Each key ID is 4 bytes (int32)
-	names := make([]string, 0, keyCount)
+	// If file doesn't exist, return empty map
+	if _, err := os.Stat(credFile); os.IsNotExist(err) {
+		return make(map[string][]byte), nil
+	}
 
-	for i := 0; i < keyCount; i++ {
-		keyID := *(*int32)(unsafe.Pointer(&buffer[i*4]))
+	// Read encrypted file
+	encryptedData, err := os.ReadFile(credFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+	}
 
-		descBuffer := make([]byte, 256)
-		descSize, _, errno := syscall.Syscall6(sysKeyctl,
-			keyctlDescribe,
-			uintptr(keyID),
-			uintptr(unsafe.Pointer(&descBuffer[0])),
-			uintptr(len(descBuffer)),
-			0, 0)
+	// Get encryption key
+	key, err := getEncryptionKey()
+	if err != nil {
+		return nil, err
+	}
 
-		if errno != 0 {
-			continue
+	// Decrypt
+	plaintext, err := decryptAESGCM(encryptedData, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+	}
+
+	// Unmarshal JSON
+	var creds map[string][]byte
+	if err := json.Unmarshal(plaintext, &creds); err != nil {
+		return nil, fmt.Errorf("failed to parse credentials: %w", err)
+	}
+
+	return creds, nil
+}
+
+// saveCredentials encrypts and writes the credentials file
+func saveCredentials(creds map[string][]byte) error {
+	if err := ensureCredDir(); err != nil {
+		return err
+	}
+
+	credFile, err := getCredFilePath()
+	if err != nil {
+		return err
+	}
+
+	// Marshal to JSON
+	plaintext, err := json.Marshal(creds)
+	if err != nil {
+		return fmt.Errorf("failed to marshal credentials: %w", err)
+	}
+
+	// Get encryption key
+	key, err := getEncryptionKey()
+	if err != nil {
+		return err
+	}
+
+	// Encrypt
+	encrypted, err := encryptAESGCM(plaintext, key)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt credentials: %w", err)
+	}
+
+	// Write to file with secure permissions
+	if err := os.WriteFile(credFile, encrypted, 0600); err != nil {
+		return fmt.Errorf("failed to write credentials file: %w", err)
+	}
+
+	return nil
+}
+
+// encryptAESGCM encrypts data using AES-256-GCM
+func encryptAESGCM(plaintext, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create nonce
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	// Encrypt and append nonce
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+// decryptAESGCM decrypts data using AES-256-GCM
+func decryptAESGCM(ciphertext, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	// Extract nonce and ciphertext
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+
+	// Decrypt
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
+}
+
+// getCache returns the credential cache, initializing it if needed
+func getCache() (map[string][]byte, error) {
+	var initErr error
+	credCacheInit.Do(func() {
+		var err error
+		credCache, err = loadCredentials()
+		if err != nil {
+			initErr = err
+			return
 		}
+	})
 
-		// Parse description format: "type;uid;gid;perm;description"
-		desc := string(descBuffer[:descSize-1])
-		parts := strings.Split(desc, ";")
-		if len(parts) >= 5 && parts[0] == "user" {
-			names = append(names, parts[4])
-		}
+	if initErr != nil {
+		return nil, initErr
+	}
+
+	return credCache, nil
+}
+
+// readCredential reads a credential from the cache
+func readCredential(name string) ([]byte, error) {
+	cache, err := getCache()
+	if err != nil {
+		return nil, err
+	}
+
+	credCacheMutex.RLock()
+	defer credCacheMutex.RUnlock()
+
+	value, exists := cache[name]
+	if !exists {
+		return nil, fmt.Errorf("credential %q not found", name)
+	}
+
+	return value, nil
+}
+
+// writeCredential writes a credential to cache and persists to disk
+func writeCredential(name string, value []byte) error {
+	cache, err := getCache()
+	if err != nil {
+		return err
+	}
+
+	credCacheMutex.Lock()
+	cache[name] = value
+	credCacheMutex.Unlock()
+
+	// Save to disk
+	credCacheMutex.RLock()
+	cacheCopy := make(map[string][]byte, len(cache))
+	for k, v := range cache {
+		cacheCopy[k] = v
+	}
+	credCacheMutex.RUnlock()
+
+	return saveCredentials(cacheCopy)
+}
+
+// deleteCredential removes a credential from cache and persists to disk
+func deleteCredential(name string) error {
+	cache, err := getCache()
+	if err != nil {
+		return err
+	}
+
+	credCacheMutex.Lock()
+	if _, exists := cache[name]; !exists {
+		credCacheMutex.Unlock()
+		return fmt.Errorf("credential %q not found", name)
+	}
+	delete(cache, name)
+	credCacheMutex.Unlock()
+
+	// Save to disk
+	credCacheMutex.RLock()
+	cacheCopy := make(map[string][]byte, len(cache))
+	for k, v := range cache {
+		cacheCopy[k] = v
+	}
+	credCacheMutex.RUnlock()
+
+	return saveCredentials(cacheCopy)
+}
+
+// listCredentials returns all credential names
+func listCredentials() ([]string, error) {
+	cache, err := getCache()
+	if err != nil {
+		return nil, err
+	}
+
+	credCacheMutex.RLock()
+	defer credCacheMutex.RUnlock()
+
+	names := make([]string, 0, len(cache))
+	for name := range cache {
+		names = append(names, name)
 	}
 
 	return names, nil
