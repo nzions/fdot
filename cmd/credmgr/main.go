@@ -12,9 +12,10 @@ import (
 	"strings"
 
 	"github.com/nzions/fdot/pkg/fdh/credmgr"
+	"github.com/nzions/fdot/pkg/fdh/fuser"
 )
 
-const Version = "1.0.1"
+const Version = "1.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -29,6 +30,12 @@ func main() {
 		handleGet()
 	case "set":
 		handleSet()
+	case "setssh":
+		handleSetSSH()
+	case "getssh":
+		handleGetSSH()
+	case "getbigkey":
+		handleGetBigKey()
 	case "del", "delete":
 		handleDelete()
 	case "list", "ls":
@@ -52,12 +59,18 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  credmgr get <name>          Retrieve credential")
 	fmt.Println("  credmgr set <name> <data>   Store credential")
+	fmt.Println("  credmgr setssh <un> <pw>    Store SSH credentials")
+	fmt.Println("  credmgr getssh              Get SSH credentials")
+	fmt.Println("  credmgr getbigkey           Get or create big key")
 	fmt.Println("  credmgr del <name>          Delete credential")
 	fmt.Println("  credmgr list                List all credentials")
 	fmt.Println("  credmgr version             Show version information")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  credmgr set myapp-token secret123")
+	fmt.Println("  credmgr setssh john mypassword")
+	fmt.Println("  credmgr getssh")
+	fmt.Println("  credmgr getbigkey")
 	fmt.Println("  credmgr get myapp-token")
 	fmt.Println("  credmgr del myapp-token")
 }
@@ -137,4 +150,43 @@ func handleList() {
 	for _, name := range names {
 		fmt.Println(name)
 	}
+}
+
+func handleSetSSH() {
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "Error: username and password required\n")
+		fmt.Fprintf(os.Stderr, "Usage: credmgr setssh <username> <password>\n")
+		os.Exit(1)
+	}
+
+	username := os.Args[2]
+	password := os.Args[3]
+
+	err := fuser.CurrentUser.SetSSHCreds(username, password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error storing SSH credentials: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("SSH credentials for '%s' stored successfully\n", username)
+}
+
+func handleGetBigKey() {
+	bigKey, err := fuser.CurrentUser.BigKey()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting big key: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Print(bigKey) // No newline to make it easier to pipe/use in scripts
+}
+
+func handleGetSSH() {
+	username, password, err := fuser.CurrentUser.SSHCreds()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting SSH credentials: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Username: %s\nPassword: %s\n", username, password)
 }

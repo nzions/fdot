@@ -4,7 +4,6 @@ package credmgr
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -19,11 +18,11 @@ const (
 
 // keyctl operations
 const (
-	keyctlGetKeyringID = 0
-	keyctlDescribe     = 6
-	keyctlRead         = 11
-	keyctlSearch       = 10
-	keyctlUnlink       = 9
+	keyctlRead        = 11
+	keyctlUnlink      = 9
+	keyctlDescribe    = 6
+	keyctlSearch      = 10
+	keyctlReadAllKeys = 3
 )
 
 // Special keyring IDs
@@ -159,39 +158,61 @@ func deleteCredential(name string) error {
 
 // listCredentials retrieves all credential names from Linux kernel keyring
 func listCredentials() ([]string, error) {
-	// Read /proc/keys to find user keys
-	data, err := os.ReadFile("/proc/keys")
-	if err != nil {
-		return []string{}, nil // Return empty list if we can't read /proc/keys
+	// Use KEYCTL_READ to get all key IDs from the user keyring
+	buffer := make([]byte, 4096)
+	bufferPtr := (*byte)(unsafe.Pointer(&buffer[0]))
+
+	size, _, errno := syscall.Syscall6(sysKeyctl,
+		keyctlReadAllKeys,
+		keySpecUserKeyring,
+		uintptr(unsafe.Pointer(bufferPtr)),
+		uintptr(len(buffer)),
+		0, 0)
+
+	if errno != 0 {
+		return []string{}, nil // Return empty list if we can't read keyring
 	}
 
-	return parseCredentialNames(string(data)), nil
-}
-
-// Helper function to extract credential names from /proc/keys (if we wanted full implementation)
-func parseCredentialNames(procKeysContent string) []string {
+	// Parse the returned key IDs (they are returned as int32 array)
+	keyCount := int(size) / 4 // Each key ID is 4 bytes
 	var names []string
-	lines := strings.Split(procKeysContent, "\n")
 
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 9 {
-			// Field 8 contains the key description
-			desc := fields[8]
+	for i := 0; i < keyCount; i++ {
+		keyID := *(*int32)(unsafe.Pointer(&buffer[i*4]))
+
+		// Get the key description using KEYCTL_DESCRIBE
+		descBuffer := make([]byte, 256)
+		descPtr := (*byte)(unsafe.Pointer(&descBuffer[0]))
+
+		descSize, _, errno := syscall.Syscall6(sysKeyctl,
+			keyctlDescribe,
+			uintptr(keyID),
+			uintptr(unsafe.Pointer(descPtr)),
+			uintptr(len(descBuffer)),
+			0, 0)
+
+		if errno != 0 {
+			continue // Skip keys we can't describe
+		}
+
+		// Parse the description: "type;uid;gid;perm;description"
+		desc := string(descBuffer[:descSize-1]) // Remove null terminator
+		parts := strings.Split(desc, ";")
+		if len(parts) >= 5 && parts[0] == "user" {
+			keyName := parts[4]
+
 			if CredentialPrefix == "" {
 				// No prefix - include all user keys
-				if strings.Contains(line, "user") {
-					names = append(names, desc)
-				}
+				names = append(names, keyName)
 			} else {
 				prefix := CredentialPrefix + "-"
-				if strings.HasPrefix(desc, prefix) {
-					name := strings.TrimPrefix(desc, prefix)
+				if after, ok := strings.CutPrefix(keyName, prefix); ok {
+					name := after
 					names = append(names, name)
 				}
 			}
 		}
 	}
 
-	return names
+	return names, nil
 }
