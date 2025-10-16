@@ -1,6 +1,6 @@
 # Binaries and executables
-credmgr
-credmgr.exe
+/credmgr
+/credmgr.exe
 *.exe
 *.dll
 *.so
