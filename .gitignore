@@ -1,0 +1,36 @@
+# Binaries and executables
+credmgr
+credmgr.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+*.o
+*.obj
+*.class
+*.jar
+*.war
+*.ear
+
+# Python bytecode
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Go binaries
+/bin/
+/build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
