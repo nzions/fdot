@@ -14,6 +14,7 @@ var (
 const (
 	// CredentialPrefix is prepended to all credential names when set
 	CredentialPrefix = ""
+	Version          = "1.0.0"
 )
 
 // Read retrieves a credential by name

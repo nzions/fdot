@@ -14,6 +14,8 @@ import (
 	"github.com/nzions/fdot/pkg/fdh/credmgr"
 )
 
+const Version = "1.0.1"
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -31,6 +33,8 @@ func main() {
 		handleDelete()
 	case "list", "ls":
 		handleList()
+	case "version", "-v", "--version":
+		printVersion()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -41,18 +45,25 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("credmgr - Simple Windows Credential Manager CLI")
+	fmt.Println("credmgr - Simple Credential Manager CLI")
+	fmt.Printf("Binary Version   %s\n", Version)
+	fmt.Printf("Library Version  %s\n", credmgr.Version)
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  credmgr get <name>          Retrieve credential")
 	fmt.Println("  credmgr set <name> <data>   Store credential")
 	fmt.Println("  credmgr del <name>          Delete credential")
 	fmt.Println("  credmgr list                List all credentials")
+	fmt.Println("  credmgr version             Show version information")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  credmgr set myapp-token secret123")
 	fmt.Println("  credmgr get myapp-token")
 	fmt.Println("  credmgr del myapp-token")
+}
+
+func printVersion() {
+	fmt.Println(Version)
 }
 
 func handleGet() {

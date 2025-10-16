@@ -39,8 +39,22 @@ This is a Go project using Go 1.24.4 with standard project structure:
 ### Dependencies & Modules
 - Use `go mod tidy` to maintain clean dependencies
 - Prefer standard library over external dependencies when possible
-- Use semantic versioning for releases
 - Keep dependencies minimal and well-maintained
+
+### Semantic Versioning Requirements
+- ALWAYS follow strict semantic versioning (SemVer 2.0.0)
+- Version format: MAJOR.MINOR.PATCH (e.g., v1.2.3)
+- MAJOR: Increment for incompatible API changes (breaking changes)
+- MINOR: Increment for backward-compatible functionality additions
+- PATCH: Increment for backward-compatible bug fixes
+
+#### Version Increment Rules:
+- Breaking changes (API removal, signature changes): MAJOR bump
+- New features (new functions, methods, types): MINOR bump  
+- Bug fixes, security patches, refactoring: PATCH bump
+- Documentation-only changes: PATCH bump
+- Internal changes with no API impact: PATCH bump
+
 
 ### Performance & Concurrency
 - Use goroutines for concurrent operations
@@ -96,4 +110,5 @@ This is a Go project using Go 1.24.4 with standard project structure:
 - ALWAYS use go 1.22+ web mux
 - ALWAYS use any instead of interface{}
 - ALWAYS compile binaries to `<project root>/bin/` directory
+- ALWAYS follow strict semantic versioning (SemVer 2.0.0)
 - NEVER use deprecated or outdated libraries
