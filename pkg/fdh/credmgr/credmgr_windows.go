@@ -4,7 +4,6 @@ package credmgr
 
 import (
 	"fmt"
-	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -68,9 +67,6 @@ func utf16PtrToString(ptr *uint16) string {
 // readCredential retrieves a credential from Windows Credential Manager
 func readCredential(name string) ([]byte, error) {
 	targetName := name
-	if CredentialPrefix != "" {
-		targetName = CredentialPrefix + "-" + name
-	}
 	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert target name: %w", err)
@@ -103,9 +99,6 @@ func readCredential(name string) ([]byte, error) {
 // writeCredential stores a credential in Windows Credential Manager
 func writeCredential(name string, data []byte) error {
 	targetName := name
-	if CredentialPrefix != "" {
-		targetName = CredentialPrefix + "-" + name
-	}
 	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
 	if err != nil {
 		return fmt.Errorf("failed to convert target name: %w", err)
@@ -139,9 +132,6 @@ func writeCredential(name string, data []byte) error {
 // deleteCredential removes a credential from Windows Credential Manager
 func deleteCredential(name string) error {
 	targetName := name
-	if CredentialPrefix != "" {
-		targetName = CredentialPrefix + "-" + name
-	}
 	targetNamePtr, err := syscall.UTF16PtrFromString(targetName)
 	if err != nil {
 		return fmt.Errorf("failed to convert target name: %w", err)
@@ -184,15 +174,7 @@ func listCredentials() ([]string, error) {
 	for _, cred := range credSlice {
 		if cred.Type == credTypeGeneric {
 			fullName := utf16PtrToString(cred.TargetName)
-			if CredentialPrefix == "" {
-				names = append(names, fullName)
-			} else {
-				prefix := CredentialPrefix + "-"
-				if strings.HasPrefix(fullName, prefix) {
-					name := strings.TrimPrefix(fullName, prefix)
-					names = append(names, name)
-				}
-			}
+			names = append(names, fullName)
 		}
 	}
 

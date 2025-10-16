@@ -33,9 +33,6 @@ const (
 // readCredential retrieves a credential from Linux kernel keyring
 func readCredential(name string) ([]byte, error) {
 	keyName := name
-	if CredentialPrefix != "" {
-		keyName = CredentialPrefix + "-" + name
-	}
 
 	// Search for the key in user keyring
 	keyNamePtr, err := syscall.BytePtrFromString(keyName)
@@ -80,9 +77,6 @@ func readCredential(name string) ([]byte, error) {
 // writeCredential stores a credential in Linux kernel keyring
 func writeCredential(name string, data []byte) error {
 	keyName := name
-	if CredentialPrefix != "" {
-		keyName = CredentialPrefix + "-" + name
-	}
 
 	keyTypePtr, err := syscall.BytePtrFromString("user")
 	if err != nil {
@@ -117,9 +111,6 @@ func writeCredential(name string, data []byte) error {
 // deleteCredential removes a credential from Linux kernel keyring
 func deleteCredential(name string) error {
 	keyName := name
-	if CredentialPrefix != "" {
-		keyName = CredentialPrefix + "-" + name
-	}
 
 	// First find the key
 	keyNamePtr, err := syscall.BytePtrFromString(keyName)
@@ -200,17 +191,7 @@ func listCredentials() ([]string, error) {
 		parts := strings.Split(desc, ";")
 		if len(parts) >= 5 && parts[0] == "user" {
 			keyName := parts[4]
-
-			if CredentialPrefix == "" {
-				// No prefix - include all user keys
-				names = append(names, keyName)
-			} else {
-				prefix := CredentialPrefix + "-"
-				if after, ok := strings.CutPrefix(keyName, prefix); ok {
-					name := after
-					names = append(names, name)
-				}
-			}
+			names = append(names, keyName)
 		}
 	}
 

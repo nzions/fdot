@@ -14,7 +14,6 @@ A cross-platform credential management library and CLI tool for securely storing
 - **Secure storage**: Uses OS-native secure storage mechanisms
 - **Simple API**: Clean Go interface with minimal dependencies
 - **CLI tool**: Command-line interface for credential management
-- **No forced prefixing**: Store credentials with clean names
 
 #### Installation
 

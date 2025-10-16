@@ -73,7 +73,6 @@ names, err := credmgr.List()
 ## Implementation Notes
 
 ### Linux Kernel Keyring
-- Keys stored with prefix `fdot-cred:` to avoid naming conflicts
 - Uses user keyring (`KEY_SPEC_USER_KEYRING`) for persistence
 - Requires appropriate user permissions (should work for any user)
 - Data visible in `/proc/keys` (for debugging)
