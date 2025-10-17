@@ -69,6 +69,13 @@ func Delete(name string) error {
 	return deleteCredential(name)
 }
 
+// DeleteDB removes the entire credential database.
+// On Linux: Deletes the encrypted credentials file and clears cache.
+// On Windows: Removes all generic credentials from Windows Credential Manager.
+func DeleteDB() error {
+	return deleteDatabaseCredential()
+}
+
 // List returns all credential names.
 func List() ([]string, error) {
 	return listCredentials()

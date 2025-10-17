@@ -21,3 +21,8 @@ func deleteCredential(name string) error {
 func listCredentials() ([]string, error) {
 	return nil, ErrNotSupported
 }
+
+// deleteDatabaseCredential is not implemented on this platform
+func deleteDatabaseCredential() error {
+	return ErrNotSupported
+}

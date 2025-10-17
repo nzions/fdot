@@ -21,6 +21,7 @@ go build -o credmgr.exe ./cmd/credmgr
 credmgr get <name>          # Retrieve credential
 credmgr set <name> <data>   # Store credential  
 credmgr del <name>          # Delete credential
+credmgr deletedb            # Delete entire credential database
 ```
 
 ## Examples
@@ -34,6 +35,9 @@ credmgr get myapp-token
 
 # Delete a credential
 credmgr del myapp-token
+
+# Delete all credentials (with confirmation)
+credmgr deletedb
 
 # Store data with spaces
 credmgr set database-connection "Server=localhost;Database=mydb;User=admin;Password=secret"

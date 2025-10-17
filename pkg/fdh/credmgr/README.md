@@ -54,6 +54,7 @@ func WriteUserCred(name string, cred UserCred) error
 ### Management
 ```go
 func Delete(name string) error
+func DeleteDB() error  // Deletes entire credential database
 func List() ([]string, error)
 ```
 
@@ -115,6 +116,9 @@ password := cred.Password()
 
 // Delete credential
 err := credmgr.Delete("api-token")
+
+// Delete entire credential database
+err := credmgr.DeleteDB()
 
 // List all credentials
 names, err := credmgr.List()

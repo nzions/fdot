@@ -336,6 +336,84 @@ func TestDeleteNotFound(t *testing.T) {
 	}
 }
 
+func TestDeleteDB(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// Create some test credentials
+	testCreds := []string{
+		"test-deletedb-cred-1",
+		"test-deletedb-cred-2",
+		"test-deletedb-cred-3",
+	}
+
+	for _, name := range testCreds {
+		if err := Write(name, []byte("test data")); err != nil {
+			t.Fatalf("Write failed for %s: %v", name, err)
+		}
+	}
+
+	// Verify they exist
+	names, err := List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	foundCount := 0
+	for _, name := range names {
+		for _, testCred := range testCreds {
+			if name == testCred {
+				foundCount++
+			}
+		}
+	}
+	if foundCount != len(testCreds) {
+		t.Errorf("Expected to find %d test credentials, found %d", len(testCreds), foundCount)
+	}
+
+	// Delete the entire database
+	if err := DeleteDB(); err != nil {
+		t.Fatalf("DeleteDB failed: %v", err)
+	}
+
+	// Verify all credentials are gone
+	names, err = List()
+	if err != nil {
+		t.Fatalf("List after DeleteDB failed: %v", err)
+	}
+
+	// Check that our test credentials are no longer present
+	for _, name := range names {
+		for _, testCred := range testCreds {
+			if name == testCred {
+				t.Errorf("Credential %s still exists after DeleteDB", testCred)
+			}
+		}
+	}
+
+	// Try to read one of the deleted credentials
+	_, err = Read(testCreds[0])
+	if err == nil {
+		t.Error("Read after DeleteDB should fail")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Read after DeleteDB error should wrap ErrNotFound, got: %v", err)
+	}
+}
+
+func TestDeleteDBEmpty(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// Clear any existing credentials first
+	DeleteDB()
+
+	// DeleteDB on empty database should not error
+	if err := DeleteDB(); err != nil {
+		t.Errorf("DeleteDB on empty database should not error, got: %v", err)
+	}
+}
+
 func TestList(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()

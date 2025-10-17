@@ -4,6 +4,7 @@ package credmgr
 
 import (
 	"fmt"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -173,4 +174,36 @@ func listCredentials() ([]string, error) {
 	}
 
 	return names, nil
+}
+
+// deleteDatabaseCredential removes all generic credentials from Windows Credential Manager.
+// This is equivalent to clearing the credential database.
+func deleteDatabaseCredential() error {
+	// First get all credential names
+	names, err := listCredentials()
+	if err != nil {
+		return fmt.Errorf("failed to list credentials: %w", err)
+	}
+
+	// Delete each credential individually
+	var errors []error
+	for _, name := range names {
+		if err := deleteCredential(name); err != nil {
+			// Continue deleting others even if one fails
+			errors = append(errors, fmt.Errorf("failed to delete credential %q: %w", name, err))
+		}
+	}
+
+	// Return combined errors if any occurred
+	if len(errors) > 0 {
+		var errStr strings.Builder
+		errStr.WriteString("failed to delete some credentials:")
+		for _, e := range errors {
+			errStr.WriteString("\n  ")
+			errStr.WriteString(e.Error())
+		}
+		return fmt.Errorf(errStr.String())
+	}
+
+	return nil
 }

@@ -1,5 +1,11 @@
 github.com/nzions/dsjdb v0.0.0-20251016155548-4d613974bb2d h1:j0X7K+iE53uxTkJ6G0NfdmvsSoPwwUylBPY9myLvRU8=
 github.com/nzions/dsjdb v0.0.0-20251016155548-4d613974bb2d/go.mod h1:vL6plbGAUjJ0mtxd6Qe2Zvp3r9jCDU37D7I13OclyCE=
+github.com/nzions/dsjdb v0.1.0 h1:9jHqSjzcpWF0pghE9fPGKFNjK5ngwpu7EGMIVKnM7o0=
+github.com/nzions/dsjdb v0.1.0/go.mod h1:vL6plbGAUjJ0mtxd6Qe2Zvp3r9jCDU37D7I13OclyCE=
+github.com/nzions/eventstream v0.0.0-20251017202022-23cf43bbe801 h1:AE5ISUSthX2zuCbTCLNA8oV+AnXiuBw4PtKhWTrAKHs=
+github.com/nzions/eventstream v0.0.0-20251017202022-23cf43bbe801/go.mod h1:8cFaON427ZpYG0dkPddeuBE2GswSMaITh1AXjXTnurw=
+github.com/nzions/eventstream v0.0.0-20251017205342-c2f0d56cf7c5 h1:qWU9HtMZIYHpeoDmm0QwNyWKikLJy3ZwxEGlqc9AsaM=
+github.com/nzions/eventstream v0.0.0-20251017205342-c2f0d56cf7c5/go.mod h1:8cFaON427ZpYG0dkPddeuBE2GswSMaITh1AXjXTnurw=
 golang.org/x/crypto v0.43.0 h1:dduJYIi3A3KOfdGOHX8AVZ/jGiyPa3IbBozJ5kNuE04=
 golang.org/x/crypto v0.43.0/go.mod h1:BFbav4mRNlXJL4wNeejLpWxB7wMbc79PdRGhWKncxR0=
 golang.org/x/sys v0.37.0 h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=

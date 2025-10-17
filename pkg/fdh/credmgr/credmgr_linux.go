@@ -58,6 +58,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/nzions/fdot/pkg/fdh"
 	"github.com/nzions/fdot/pkg/fdotconfig"
 )
 
@@ -76,20 +77,20 @@ var (
 // getEncryptionKey loads and validates the encryption key from environment variable
 func getEncryptionKey() ([]byte, error) {
 	keyInitOnce.Do(func() {
-		keyHex := os.Getenv(fdotconfig.CredMgrEnvVar)
+		keyHex := os.Getenv(fdotconfig.CredMgrEnvVarKey)
 		if keyHex == "" {
-			keyInitError = fmt.Errorf("%s environment variable not set", fdotconfig.CredMgrEnvVar)
+			keyInitError = fmt.Errorf("%s environment variable not set", fdotconfig.CredMgrEnvVarKey)
 			return
 		}
 
 		key, err := hex.DecodeString(keyHex)
 		if err != nil {
-			keyInitError = fmt.Errorf("invalid %s format (expected 64 hex chars): %w", fdotconfig.CredMgrEnvVar, err)
+			keyInitError = fmt.Errorf("invalid %s format (expected 64 hex chars): %w", fdotconfig.CredMgrEnvVarKey, err)
 			return
 		}
 
 		if len(key) != 32 {
-			keyInitError = fmt.Errorf("invalid %s length (expected 32 bytes, got %d)", fdotconfig.CredMgrEnvVar, len(key))
+			keyInitError = fmt.Errorf("invalid %s length (expected 32 bytes, got %d)", fdotconfig.CredMgrEnvVarKey, len(key))
 			return
 		}
 
@@ -101,28 +102,7 @@ func getEncryptionKey() ([]byte, error) {
 
 // getCredFilePath returns the path to the encrypted credentials file
 func getCredFilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	credDir := filepath.Join(homeDir, fdotconfig.FDOTDir)
-	return filepath.Join(credDir, "credentials.enc"), nil
-}
-
-// ensureCredDir creates the credential directory if it doesn't exist
-func ensureCredDir() error {
-	credFile, err := getCredFilePath()
-	if err != nil {
-		return err
-	}
-
-	credDir := filepath.Dir(credFile)
-	if err := os.MkdirAll(credDir, 0700); err != nil {
-		return fmt.Errorf("failed to create credential directory: %w", err)
-	}
-
-	return nil
+	return fdotconfig.GetCredFilePath()
 }
 
 // loadCredentials reads and decrypts the credentials file
@@ -166,12 +146,12 @@ func loadCredentials() (map[string][]byte, error) {
 
 // saveCredentials encrypts and writes the credentials file
 func saveCredentials(creds map[string][]byte) error {
-	if err := ensureCredDir(); err != nil {
+	credFile, err := getCredFilePath()
+	if err != nil {
 		return err
 	}
 
-	credFile, err := getCredFilePath()
-	if err != nil {
+	if err := fdh.CheckCreateDir(filepath.Dir(credFile)); err != nil {
 		return err
 	}
 
@@ -352,4 +332,32 @@ func listCredentials() ([]string, error) {
 	}
 
 	return names, nil
+}
+
+// deleteDatabaseCredential removes the entire credential database file and clears the cache
+func deleteDatabaseCredential() error {
+	credFile, err := getCredFilePath()
+	if err != nil {
+		return err
+	}
+
+	// Clear the in-memory cache first
+	credCacheMutex.Lock()
+	credCache = make(map[string][]byte)
+	credCacheMutex.Unlock()
+
+	// Remove the encrypted file if it exists
+	if _, err := os.Stat(credFile); err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist, nothing to delete
+			return nil
+		}
+		return fmt.Errorf("failed to stat credentials file: %w", err)
+	}
+
+	if err := os.Remove(credFile); err != nil {
+		return fmt.Errorf("failed to delete credentials database: %w", err)
+	}
+
+	return nil
 }

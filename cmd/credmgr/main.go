@@ -4,6 +4,7 @@
 //	credmgr get <name>          - Retrieve credential
 //	credmgr set <name> <data>   - Store credential
 //	credmgr del <name>          - Delete credential
+//	credmgr deletedb            - Delete entire credential database
 package main
 
 import (
@@ -38,6 +39,8 @@ func main() {
 		handleGetBigKey()
 	case "del", "delete":
 		handleDelete()
+	case "deletedb", "cleardb", "clear":
+		handleDeleteDB()
 	case "list", "ls":
 		handleList()
 	case "version", "-v", "--version":
@@ -63,6 +66,7 @@ func printUsage() {
 	fmt.Println("  credmgr getssh              Get SSH credentials")
 	fmt.Println("  credmgr getbigkey           Get or create big key")
 	fmt.Println("  credmgr del <name>          Delete credential")
+	fmt.Println("  credmgr deletedb            Delete ALL credentials (with confirmation)")
 	fmt.Println("  credmgr list                List all credentials")
 	fmt.Println("  credmgr version             Show version information")
 	fmt.Println()
@@ -152,6 +156,28 @@ func handleList() {
 	}
 }
 
+func handleDeleteDB() {
+	// Prompt for confirmation since this is destructive
+	fmt.Print("This will delete ALL credentials from the database. Are you sure? (yes/no): ")
+
+	var response string
+	fmt.Scanln(&response)
+
+	response = strings.ToLower(strings.TrimSpace(response))
+	if response != "yes" && response != "y" {
+		fmt.Println("Operation cancelled")
+		return
+	}
+
+	err := credmgr.DeleteDB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error deleting credential database: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Credential database deleted successfully")
+}
+
 func handleSetSSH() {
 	if len(os.Args) < 4 {
 		fmt.Fprintf(os.Stderr, "Error: username and password required\n")
@@ -182,11 +208,11 @@ func handleGetBigKey() {
 }
 
 func handleGetSSH() {
-	username, password, err := fuser.CurrentUser.SSHCreds()
+	cred, err := fuser.CurrentUser.SSHCreds()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting SSH credentials: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Username: %s\nPassword: %s\n", username, password)
+	fmt.Printf("Username: %s\nPassword: %s\n", cred.Username(), cred.Password())
 }

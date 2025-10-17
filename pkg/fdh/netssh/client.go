@@ -1,10 +1,12 @@
 package netssh
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/nzions/fdot/pkg/fdh/credmgr"
 	"github.com/nzions/fdot/pkg/fdh/netmodel"
 	"golang.org/x/crypto/ssh"
 )
@@ -22,14 +24,13 @@ type Client struct {
 type Config struct {
 	Host        string
 	Port        int
-	Username    string
-	Password    string
+	Credentials credmgr.UserCred
 	Timeout     time.Duration
 	CacheConfig *netmodel.CacheConfig // Optional cache configuration
 }
 
 // NewClient creates a new SSH client configured for network devices
-func NewClient(cfg Config) *Client {
+func NewClient(ctx context.Context, cfg Config) *Client {
 	if cfg.Port == 0 {
 		cfg.Port = 22 // Default SSH port
 	}
@@ -42,9 +43,9 @@ func NewClient(cfg Config) *Client {
 
 	return &Client{
 		config: &ssh.ClientConfig{
-			User: cfg.Username,
+			User: cfg.Credentials.Username(),
 			Auth: []ssh.AuthMethod{
-				ssh.Password(cfg.Password),
+				ssh.Password(cfg.Credentials.Password()),
 			},
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For network devices, typically don't validate host keys
 			Timeout:         cfg.Timeout,

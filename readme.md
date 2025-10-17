@@ -36,6 +36,9 @@ go build -o credmgr ./cmd/credmgr
 
 # Delete a credential
 ./credmgr del myapp-token
+
+# Delete all credentials
+./credmgr deletedb
 ```
 
 **Go Library:**
@@ -50,6 +53,9 @@ value, err := credmgr.ReadString("api-key")
 
 // Delete a credential
 err := credmgr.Delete("api-key")
+
+// Delete entire credential database
+err := credmgr.DeleteDB()
 
 // List all credentials
 names, err := credmgr.List()

@@ -50,6 +50,9 @@ func init() {
 		DataDir:    dataDir,
 		NetworkDir: networkDir,
 	}
+
+	// Register as the path provider for credential operations
+	fdotconfig.SetPathProvider(CurrentUser)
 }
 
 type FUser struct {
@@ -77,12 +80,12 @@ func (u *FUser) BigKey() (string, error) {
 	return bigKey, nil
 }
 
-func (u *FUser) SSHCreds() (username, password string, err error) {
+func (u *FUser) SSHCreds() (credmgr.UserCred, error) {
 	cred, err := credmgr.ReadUserCred(fdotconfig.SSHCredSecretName)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	return cred.Username(), cred.Password(), nil
+	return cred, nil
 }
 
 func (u *FUser) SetSSHCreds(username, password string) error {
