@@ -15,7 +15,7 @@ Replaced Linux kernel keyring implementation with AES-256-GCM encrypted file sto
 - **API**: `add_key`, `request_key`, `keyctl` syscalls
 
 ### After (Encrypted File)
-- **Storage**: `~/.local/share/fdot/credentials.enc`
+- **Storage**: `~/.fdot/credentials.enc`
 - **Persistence**: File-based (survives reboots) ✅
 - **Security**: Good (AES-256-GCM encryption, 0600 permissions)
 - **API**: Standard Go file I/O + crypto/aes

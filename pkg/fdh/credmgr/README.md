@@ -43,7 +43,7 @@ func WriteString(name, value string) error
 
 ### Linux  
 - **Backend**: AES-256-GCM encrypted file storage
-- **Storage**: `~/.local/share/fdot/credentials.enc` (file permissions: 0600)
+- **Storage**: `~/.fdot/credentials.enc` (file permissions: 0600)
 - **Encryption Key**: Environment variable `CREDMGR_KEY` (64 hex chars)
 - **Persistence**: File-based (survives reboots)
 - **Security**: AES-256-GCM authenticated encryption
@@ -90,7 +90,7 @@ names, err := credmgr.List()
 ### Linux: AES-256-GCM Encrypted File Storage
 
 **Storage Location:**
-- File: `~/.local/share/fdot/credentials.enc`
+- File: `~/.fdot/credentials.enc`
 - Permissions: `0600` (owner read/write only)
 - Directory permissions: `0700`
 

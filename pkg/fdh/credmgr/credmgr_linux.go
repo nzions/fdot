@@ -5,7 +5,7 @@
 // # Storage Architecture
 //
 // Credentials are stored in an AES-256-GCM encrypted file:
-//   - Location: ~/.local/share/fdot/credentials.enc
+//   - Location: ~/.fdot/credentials.enc
 //   - Format: JSON map encrypted with AES-256-GCM
 //   - Permissions: 0600 (owner read/write only)
 //
@@ -106,7 +106,7 @@ func getCredFilePath() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	credDir := filepath.Join(homeDir, ".local", "share", "fdot")
+	credDir := filepath.Join(homeDir, fdotconfig.FDOTDir)
 	return filepath.Join(credDir, "credentials.enc"), nil
 }
 

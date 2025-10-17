@@ -49,6 +49,7 @@ func init() {
 	CurrentUser = &FUser{
 		Username:   user.Username,
 		HomeDir:    homeDir,
+		DataDir:    dataDir,
 		NetworkDir: networkDir,
 	}
 }
@@ -98,4 +99,9 @@ func (u *FUser) SetSSHCreds(username, password string) error {
 	// Store credentials in the format: "username:password"
 	sshCreds := username + ":" + password
 	return credmgr.WriteString(fdotconfig.SSHCredSecretName, sshCreds)
+}
+
+// CredFilePath returns the path to the encrypted credentials file
+func (u *FUser) CredFilePath() string {
+	return filepath.Join(u.DataDir, "credentials.enc")
 }
