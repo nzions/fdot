@@ -17,76 +17,60 @@ var (
 
 const (
 	// Version is the credmgr package version.
-	Version = "2.0.0"
+	Version = "3.0.0"
 )
 
-// Read retrieves raw credential bytes by name.
-func Read(name string) ([]byte, error) {
-	return readCredential(name)
+// CredManager defines the interface for credential management operations.
+type CredManager interface {
+	// Read retrieves raw credential bytes by name.
+	Read(name string) ([]byte, error)
+
+	// Write stores raw credential bytes with the given name.
+	Write(name string, data []byte) error
+
+	// ReadKey retrieves a credential key as a string.
+	ReadKey(name string) (string, error)
+
+	// WriteKey stores a string credential key.
+	WriteKey(name, key string) error
+
+	// ReadUserCred retrieves a username/password credential.
+	ReadUserCred(name string) (UserCred, error)
+
+	// WriteUserCred stores a username/password credential.
+	WriteUserCred(name string, cred UserCred) error
+
+	// Delete removes a credential by name.
+	Delete(name string) error
+
+	// DeleteDB removes the entire credential database.
+	DeleteDB() error
+
+	// List returns all credential names.
+	List() ([]string, error)
 }
 
-// Write stores raw credential bytes with the given name.
-func Write(name string, data []byte) error {
-	return writeCredential(name, data)
+// New creates a new CredManager with the specified storage path.
+//
+// Path behavior:
+//   - Empty string ("") or nil: Uses platform default storage
+//   - Windows: Uses Windows Credential Manager
+//   - Linux: Uses default file path (~/.fdot/credentials.enc)
+//   - Non-empty string: Uses disk-based storage at specified path
+//   - All platforms: AES-encrypted file storage at the given path
+//
+// Examples:
+//
+//	credmgr := credmgr.New("")                    // Platform default
+//	credmgr := credmgr.New("/custom/creds.enc")   // Custom file path
+func New(path string) (CredManager, error) {
+	return newCredManager(path)
 }
 
-// ReadKey retrieves a credential key as a string.
-func ReadKey(name string) (string, error) {
-	data, err := Read(name)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// WriteKey stores a string credential key.
-func WriteKey(name, key string) error {
-	return Write(name, []byte(key))
-}
-
-// ReadUserCred retrieves a username/password credential.
-func ReadUserCred(name string) (UserCred, error) {
-	data, err := Read(name)
-	if err != nil {
-		return nil, err
-	}
-	return unmarshalUnPw(data)
-}
-
-// WriteUserCred stores a username/password credential.
-func WriteUserCred(name string, cred UserCred) error {
-	// Type assert to access marshal method
-	if uc, ok := cred.(*obfuscatedUserCred); ok {
-		return Write(name, uc.marshal())
-	}
-	// Fallback: reconstruct from interface
-	reconstructed := newObfuscatedUserCred(cred.Username(), cred.Password())
-	return Write(name, reconstructed.marshal())
-}
-
-// Delete removes a credential by name.
-func Delete(name string) error {
-	return deleteCredential(name)
-}
-
-// DeleteDB removes the entire credential database.
-// On Linux: Deletes the encrypted credentials file and clears cache.
-// On Windows: Removes all generic credentials from Windows Credential Manager.
-func DeleteDB() error {
-	return deleteDatabaseCredential()
-}
-
-// List returns all credential names.
-func List() ([]string, error) {
-	return listCredentials()
-}
-
-// Deprecated: Use ReadKey instead.
-func ReadString(name string) (string, error) {
-	return ReadKey(name)
-}
-
-// Deprecated: Use WriteKey instead.
-func WriteString(name, value string) error {
-	return WriteKey(name, value)
+// Default returns a CredManager using the platform's default storage mechanism.
+//   - Windows: Windows Credential Manager
+//   - Linux: ~/.local/credmgr/credentials.enc
+//   - Other: Returns error for unsupported operations
+func Default() (CredManager, error) {
+	return defaultCredManager()
 }

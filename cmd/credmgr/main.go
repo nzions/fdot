@@ -8,12 +8,13 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/nzions/fdot/pkg/fdh/credmgr"
-	"github.com/nzions/fdot/pkg/fdh/fuser"
 )
 
 const Version = "1.1.0"
@@ -24,25 +25,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create credential manager instance
+	cm, err := credmgr.Default()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating credential manager: %v\n", err)
+		os.Exit(1)
+	}
+
 	command := strings.ToLower(os.Args[1])
 
 	switch command {
 	case "get":
-		handleGet()
+		handleGet(cm)
 	case "set":
-		handleSet()
+		handleSet(cm)
 	case "setssh":
-		handleSetSSH()
+		handleSetSSH(cm)
 	case "getssh":
-		handleGetSSH()
+		handleGetSSH(cm)
 	case "getbigkey":
-		handleGetBigKey()
+		handleGetBigKey(cm)
 	case "del", "delete":
-		handleDelete()
+		handleDelete(cm)
 	case "deletedb", "cleardb", "clear":
-		handleDeleteDB()
+		handleDeleteDB(cm)
 	case "list", "ls":
-		handleList()
+		handleList(cm)
 	case "version", "-v", "--version":
 		printVersion()
 	case "help", "-h", "--help":
@@ -83,7 +91,7 @@ func printVersion() {
 	fmt.Println(Version)
 }
 
-func handleGet() {
+func handleGet(cm credmgr.CredManager) {
 	if len(os.Args) < 3 {
 		fmt.Fprintf(os.Stderr, "Error: credential name required\n")
 		fmt.Fprintf(os.Stderr, "Usage: credmgr get <name>\n")
@@ -92,7 +100,7 @@ func handleGet() {
 
 	name := os.Args[2]
 
-	data, err := credmgr.ReadKey(name)
+	data, err := cm.ReadKey(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading credential '%s': %v\n", name, err)
 		os.Exit(1)
@@ -101,7 +109,7 @@ func handleGet() {
 	fmt.Print(data) // No newline to make it easier to pipe/use in scripts
 }
 
-func handleSet() {
+func handleSet(cm credmgr.CredManager) {
 	if len(os.Args) < 4 {
 		fmt.Fprintf(os.Stderr, "Error: credential name and data required\n")
 		fmt.Fprintf(os.Stderr, "Usage: credmgr set <name> <data>\n")
@@ -112,7 +120,7 @@ func handleSet() {
 	// Join all remaining args as the data (allows spaces in data)
 	data := strings.Join(os.Args[3:], " ")
 
-	err := credmgr.WriteKey(name, data)
+	err := cm.WriteKey(name, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error storing credential '%s': %v\n", name, err)
 		os.Exit(1)
@@ -121,7 +129,7 @@ func handleSet() {
 	fmt.Printf("Credential '%s' stored successfully\n", name)
 }
 
-func handleDelete() {
+func handleDelete(cm credmgr.CredManager) {
 	if len(os.Args) < 3 {
 		fmt.Fprintf(os.Stderr, "Error: credential name required\n")
 		fmt.Fprintf(os.Stderr, "Usage: credmgr del <name>\n")
@@ -130,7 +138,7 @@ func handleDelete() {
 
 	name := os.Args[2]
 
-	err := credmgr.Delete(name)
+	err := cm.Delete(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error deleting credential '%s': %v\n", name, err)
 		os.Exit(1)
@@ -139,8 +147,8 @@ func handleDelete() {
 	fmt.Printf("Credential '%s' deleted successfully\n", name)
 }
 
-func handleList() {
-	names, err := credmgr.List()
+func handleList(cm credmgr.CredManager) {
+	names, err := cm.List()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error listing credentials: %v\n", err)
 		os.Exit(1)
@@ -156,7 +164,7 @@ func handleList() {
 	}
 }
 
-func handleDeleteDB() {
+func handleDeleteDB(cm credmgr.CredManager) {
 	// Prompt for confirmation since this is destructive
 	fmt.Print("This will delete ALL credentials from the database. Are you sure? (yes/no): ")
 
@@ -169,7 +177,7 @@ func handleDeleteDB() {
 		return
 	}
 
-	err := credmgr.DeleteDB()
+	err := cm.DeleteDB()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error deleting credential database: %v\n", err)
 		os.Exit(1)
@@ -178,7 +186,7 @@ func handleDeleteDB() {
 	fmt.Println("Credential database deleted successfully")
 }
 
-func handleSetSSH() {
+func handleSetSSH(cm credmgr.CredManager) {
 	if len(os.Args) < 4 {
 		fmt.Fprintf(os.Stderr, "Error: username and password required\n")
 		fmt.Fprintf(os.Stderr, "Usage: credmgr setssh <username> <password>\n")
@@ -188,7 +196,9 @@ func handleSetSSH() {
 	username := os.Args[2]
 	password := os.Args[3]
 
-	err := fuser.CurrentUser.SetSSHCreds(username, password)
+	// Store SSH credentials directly using credmgr
+	cred := credmgr.NewUnPw(username, password)
+	err := cm.WriteUserCred("fdh-user-ssh-creds", cred)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error storing SSH credentials: %v\n", err)
 		os.Exit(1)
@@ -197,18 +207,32 @@ func handleSetSSH() {
 	fmt.Printf("SSH credentials for '%s' stored successfully\n", username)
 }
 
-func handleGetBigKey() {
-	bigKey, err := fuser.CurrentUser.BigKey()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting big key: %v\n", err)
+func handleGetBigKey(cm credmgr.CredManager) {
+	// Try to read existing big key
+	bigKey, err := cm.ReadKey("fdh-user-bigkey")
+	if err == nil {
+		fmt.Print(bigKey)
+		return
+	}
+
+	// Create new big key if it doesn't exist
+	randomBytes := make([]byte, 128)
+	if _, err := rand.Read(randomBytes); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating big key: %v\n", err)
+		os.Exit(1)
+	}
+
+	bigKey = hex.EncodeToString(randomBytes)
+	if err := cm.WriteKey("fdh-user-bigkey", bigKey); err != nil {
+		fmt.Fprintf(os.Stderr, "Error storing big key: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Print(bigKey) // No newline to make it easier to pipe/use in scripts
 }
 
-func handleGetSSH() {
-	cred, err := fuser.CurrentUser.SSHCreds()
+func handleGetSSH(cm credmgr.CredManager) {
+	cred, err := cm.ReadUserCred("fdh-user-ssh-creds")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting SSH credentials: %v\n", err)
 		os.Exit(1)

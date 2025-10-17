@@ -4,20 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
-// setupTestEnv creates a test environment with a temporary credentials file
-func setupTestEnv(t *testing.T) (CredManager, func()) {
-	t.Helper()
-
-	// Create a temporary directory for this test
-	tempDir, err := os.MkdirTemp("", "credmgr-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-
+// setupTestEnv ensures we have a valid encryption key for testing
+func setupTestEnv(t *testing.T) func() {
 	// Save original env var if it exists
 	originalKey := os.Getenv("CREDMGR_KEY")
 
@@ -27,29 +18,30 @@ func setupTestEnv(t *testing.T) (CredManager, func()) {
 		t.Fatalf("Failed to set CREDMGR_KEY: %v", err)
 	}
 
-	// Create a CredManager instance with custom temp path
-	credPath := filepath.Join(tempDir, "credentials.enc")
-	cm, err := New(credPath)
-	if err != nil {
-		os.RemoveAll(tempDir)
-		t.Fatalf("Failed to create CredManager: %v", err)
-	}
+	// Clean up any existing credentials file from different key
+	// This prevents "failed to decrypt" errors when switching between test runs
+	credFile := os.ExpandEnv("$HOME/.fdot/credentials.enc")
+	os.Remove(credFile) // Ignore errors - file might not exist
 
 	// Return cleanup function
-	return cm, func() {
-		// Restore original environment
+	return func() {
 		if originalKey != "" {
 			os.Setenv("CREDMGR_KEY", originalKey)
 		} else {
 			os.Unsetenv("CREDMGR_KEY")
 		}
-		// Clean up temp directory
-		os.RemoveAll(tempDir)
+		// Clean up any test credentials
+		names, _ := List()
+		for _, name := range names {
+			if len(name) > 5 && name[:5] == "test-" {
+				Delete(name) // Ignore errors
+			}
+		}
 	}
 }
 
 func TestWriteRead(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -83,12 +75,12 @@ func TestWriteRead(t *testing.T) {
 			credName := "test-write-read-" + tt.name
 
 			// Write
-			if err := cm.Write(credName, tt.data); err != nil {
+			if err := Write(credName, tt.data); err != nil {
 				t.Fatalf("Write failed: %v", err)
 			}
 
 			// Read
-			retrieved, err := cm.Read(credName)
+			retrieved, err := Read(credName)
 			if err != nil {
 				t.Fatalf("Read failed: %v", err)
 			}
@@ -99,7 +91,7 @@ func TestWriteRead(t *testing.T) {
 			}
 
 			// Cleanup
-			if err := cm.Delete(credName); err != nil {
+			if err := Delete(credName); err != nil {
 				t.Logf("Warning: cleanup failed for %s: %v", credName, err)
 			}
 		})
@@ -107,10 +99,10 @@ func TestWriteRead(t *testing.T) {
 }
 
 func TestReadNotFound(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	_, err := cm.Read("test-nonexistent-credential-xyz")
+	_, err := Read("test-nonexistent-credential-xyz")
 	if err == nil {
 		t.Error("Read of nonexistent credential should return error")
 	}
@@ -120,7 +112,7 @@ func TestReadNotFound(t *testing.T) {
 }
 
 func TestWriteKeyReadKey(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -154,12 +146,12 @@ func TestWriteKeyReadKey(t *testing.T) {
 			credName := "test-key-" + tt.name
 
 			// WriteKey
-			if err := cm.WriteKey(credName, tt.key); err != nil {
+			if err := WriteKey(credName, tt.key); err != nil {
 				t.Fatalf("WriteKey failed: %v", err)
 			}
 
 			// ReadKey
-			retrieved, err := cm.ReadKey(credName)
+			retrieved, err := ReadKey(credName)
 			if err != nil {
 				t.Fatalf("ReadKey failed: %v", err)
 			}
@@ -170,16 +162,16 @@ func TestWriteKeyReadKey(t *testing.T) {
 			}
 
 			// Cleanup
-			cm.Delete(credName)
+			Delete(credName)
 		})
 	}
 }
 
 func TestReadKeyNotFound(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	_, err := cm.ReadKey("test-nonexistent-key-xyz")
+	_, err := ReadKey("test-nonexistent-key-xyz")
 	if err == nil {
 		t.Error("ReadKey of nonexistent credential should return error")
 	}
@@ -189,7 +181,7 @@ func TestReadKeyNotFound(t *testing.T) {
 }
 
 func TestWriteUserCredReadUserCred(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -237,12 +229,12 @@ func TestWriteUserCredReadUserCred(t *testing.T) {
 			cred := NewUnPw(tt.username, tt.password)
 
 			// WriteUserCred
-			if err := cm.WriteUserCred(credName, cred); err != nil {
+			if err := WriteUserCred(credName, cred); err != nil {
 				t.Fatalf("WriteUserCred failed: %v", err)
 			}
 
 			// ReadUserCred
-			retrieved, err := cm.ReadUserCred(credName)
+			retrieved, err := ReadUserCred(credName)
 			if err != nil {
 				t.Fatalf("ReadUserCred failed: %v", err)
 			}
@@ -258,16 +250,16 @@ func TestWriteUserCredReadUserCred(t *testing.T) {
 			}
 
 			// Cleanup
-			cm.Delete(credName)
+			Delete(credName)
 		})
 	}
 }
 
 func TestReadUserCredNotFound(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	_, err := cm.ReadUserCred("test-nonexistent-usercred-xyz")
+	_, err := ReadUserCred("test-nonexistent-usercred-xyz")
 	if err == nil {
 		t.Error("ReadUserCred of nonexistent credential should return error")
 	}
@@ -277,18 +269,18 @@ func TestReadUserCredNotFound(t *testing.T) {
 }
 
 func TestReadUserCredInvalidFormat(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	credName := "test-invalid-format"
 
 	// Write invalid format (no colon)
-	if err := cm.Write(credName, []byte("no-colon-here")); err != nil {
+	if err := Write(credName, []byte("no-colon-here")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Try to read as UserCred
-	_, err := cm.ReadUserCred(credName)
+	_, err := ReadUserCred(credName)
 	if err == nil {
 		t.Error("ReadUserCred with invalid format should return error")
 	}
@@ -297,32 +289,32 @@ func TestReadUserCredInvalidFormat(t *testing.T) {
 	}
 
 	// Cleanup
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func TestDelete(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	credName := "test-delete-credential"
 
 	// Create a credential
-	if err := cm.Write(credName, []byte("test data")); err != nil {
+	if err := Write(credName, []byte("test data")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Verify it exists
-	if _, err := cm.Read(credName); err != nil {
+	if _, err := Read(credName); err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
 
 	// Delete it
-	if err := cm.Delete(credName); err != nil {
+	if err := Delete(credName); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
 	// Verify it's gone
-	_, err := cm.Read(credName)
+	_, err := Read(credName)
 	if err == nil {
 		t.Error("Read after Delete should fail")
 	}
@@ -332,10 +324,10 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDeleteNotFound(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	err := cm.Delete("test-nonexistent-delete-xyz")
+	err := Delete("test-nonexistent-delete-xyz")
 	if err == nil {
 		t.Error("Delete of nonexistent credential should return error")
 	}
@@ -345,7 +337,7 @@ func TestDeleteNotFound(t *testing.T) {
 }
 
 func TestDeleteDB(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Create some test credentials
@@ -356,13 +348,13 @@ func TestDeleteDB(t *testing.T) {
 	}
 
 	for _, name := range testCreds {
-		if err := cm.Write(name, []byte("test data")); err != nil {
+		if err := Write(name, []byte("test data")); err != nil {
 			t.Fatalf("Write failed for %s: %v", name, err)
 		}
 	}
 
 	// Verify they exist
-	names, err := cm.List()
+	names, err := List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -380,12 +372,12 @@ func TestDeleteDB(t *testing.T) {
 	}
 
 	// Delete the entire database
-	if err := cm.DeleteDB(); err != nil {
+	if err := DeleteDB(); err != nil {
 		t.Fatalf("DeleteDB failed: %v", err)
 	}
 
 	// Verify all credentials are gone
-	names, err = cm.List()
+	names, err = List()
 	if err != nil {
 		t.Fatalf("List after DeleteDB failed: %v", err)
 	}
@@ -400,7 +392,7 @@ func TestDeleteDB(t *testing.T) {
 	}
 
 	// Try to read one of the deleted credentials
-	_, err = cm.Read(testCreds[0])
+	_, err = Read(testCreds[0])
 	if err == nil {
 		t.Error("Read after DeleteDB should fail")
 	}
@@ -410,20 +402,20 @@ func TestDeleteDB(t *testing.T) {
 }
 
 func TestDeleteDBEmpty(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Clear any existing credentials first
-	cm.DeleteDB()
+	DeleteDB()
 
 	// DeleteDB on empty database should not error
-	if err := cm.DeleteDB(); err != nil {
+	if err := DeleteDB(); err != nil {
 		t.Errorf("DeleteDB on empty database should not error, got: %v", err)
 	}
 }
 
 func TestList(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Create some test credentials
@@ -434,13 +426,13 @@ func TestList(t *testing.T) {
 	}
 
 	for _, name := range testCreds {
-		if err := cm.Write(name, []byte("test data")); err != nil {
+		if err := Write(name, []byte("test data")); err != nil {
 			t.Fatalf("Write %s failed: %v", name, err)
 		}
 	}
 
 	// List credentials
-	names, err := cm.List()
+	names, err := List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -461,24 +453,24 @@ func TestList(t *testing.T) {
 
 	// Cleanup
 	for _, name := range testCreds {
-		cm.Delete(name)
+		Delete(name)
 	}
 }
 
 func TestListEmpty(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Clean up all test credentials first
-	names, _ := cm.List()
+	names, _ := List()
 	for _, name := range names {
 		if len(name) > 5 && name[:5] == "test-" {
-			cm.Delete(name)
+			Delete(name)
 		}
 	}
 
 	// List should work even when empty
-	names, err := cm.List()
+	names, err := List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -492,7 +484,7 @@ func TestListEmpty(t *testing.T) {
 }
 
 func TestOverwrite(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	credName := "test-overwrite"
@@ -500,12 +492,12 @@ func TestOverwrite(t *testing.T) {
 	data2 := []byte("second data")
 
 	// Write first time
-	if err := cm.Write(credName, data1); err != nil {
+	if err := Write(credName, data1); err != nil {
 		t.Fatalf("First Write failed: %v", err)
 	}
 
 	// Verify first write
-	retrieved, err := cm.Read(credName)
+	retrieved, err := Read(credName)
 	if err != nil {
 		t.Fatalf("First Read failed: %v", err)
 	}
@@ -514,12 +506,12 @@ func TestOverwrite(t *testing.T) {
 	}
 
 	// Overwrite
-	if err := cm.Write(credName, data2); err != nil {
+	if err := Write(credName, data2); err != nil {
 		t.Fatalf("Second Write failed: %v", err)
 	}
 
 	// Verify overwrite
-	retrieved, err = cm.Read(credName)
+	retrieved, err = Read(credName)
 	if err != nil {
 		t.Fatalf("Second Read failed: %v", err)
 	}
@@ -528,11 +520,47 @@ func TestOverwrite(t *testing.T) {
 	}
 
 	// Cleanup
-	cm.Delete(credName)
+	Delete(credName)
 }
 
-func TestMixedCredentialTypes(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+func TestDeprecatedFunctions(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	credName := "test-deprecated"
+	value := "test-value-123"
+
+	// Test WriteString (deprecated)
+	if err := WriteString(credName, value); err != nil {
+		t.Fatalf("WriteString failed: %v", err)
+	}
+
+	// Test ReadString (deprecated)
+	retrieved, err := ReadString(credName)
+	if err != nil {
+		t.Fatalf("ReadString failed: %v", err)
+	}
+
+	if retrieved != value {
+		t.Errorf("ReadString mismatch: got %q, want %q", retrieved, value)
+	}
+
+	// Verify it's compatible with new API
+	retrievedKey, err := ReadKey(credName)
+	if err != nil {
+		t.Fatalf("ReadKey failed: %v", err)
+	}
+
+	if retrievedKey != value {
+		t.Errorf("ReadKey mismatch: got %q, want %q", retrievedKey, value)
+	}
+
+	// Cleanup
+	Delete(credName)
+}
+
+func TestMultipleCredentialTypes(t *testing.T) {
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Store different types of credentials
@@ -542,24 +570,24 @@ func TestMixedCredentialTypes(t *testing.T) {
 
 	// Raw bytes
 	rawData := []byte{0x01, 0x02, 0x03}
-	if err := cm.Write(rawName, rawData); err != nil {
+	if err := Write(rawName, rawData); err != nil {
 		t.Fatalf("Write raw failed: %v", err)
 	}
 
 	// Key
 	apiKey := "sk-test-key-123"
-	if err := cm.WriteKey(keyName, apiKey); err != nil {
+	if err := WriteKey(keyName, apiKey); err != nil {
 		t.Fatalf("WriteKey failed: %v", err)
 	}
 
 	// UserCred
 	cred := NewUnPw("testuser", "testpass")
-	if err := cm.WriteUserCred(userCredName, cred); err != nil {
+	if err := WriteUserCred(userCredName, cred); err != nil {
 		t.Fatalf("WriteUserCred failed: %v", err)
 	}
 
 	// List all
-	names, err := cm.List()
+	names, err := List()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -580,35 +608,35 @@ func TestMixedCredentialTypes(t *testing.T) {
 	}
 
 	// Read and verify each
-	retrievedRaw, err := cm.Read(rawName)
+	retrievedRaw, err := Read(rawName)
 	if err != nil || !bytes.Equal(retrievedRaw, rawData) {
 		t.Errorf("Raw data verification failed")
 	}
 
-	retrievedKey, err := cm.ReadKey(keyName)
+	retrievedKey, err := ReadKey(keyName)
 	if err != nil || retrievedKey != apiKey {
 		t.Errorf("Key verification failed")
 	}
 
-	retrievedCred, err := cm.ReadUserCred(userCredName)
+	retrievedCred, err := ReadUserCred(userCredName)
 	if err != nil || retrievedCred.Username() != "testuser" || retrievedCred.Password() != "testpass" {
 		t.Errorf("UserCred verification failed")
 	}
 
 	// Cleanup
-	cm.Delete(rawName)
-	cm.Delete(keyName)
-	cm.Delete(userCredName)
+	Delete(rawName)
+	Delete(keyName)
+	Delete(userCredName)
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	cm, cleanup := setupTestEnv(t)
+	cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	credName := "test-concurrent"
 
 	// Write initial data
-	if err := cm.Write(credName, []byte("initial")); err != nil {
+	if err := Write(credName, []byte("initial")); err != nil {
 		t.Fatalf("Initial write failed: %v", err)
 	}
 
@@ -616,7 +644,7 @@ func TestConcurrentAccess(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func(id int) {
-			_, err := cm.Read(credName)
+			_, err := Read(credName)
 			if err != nil {
 				t.Errorf("Concurrent read %d failed: %v", id, err)
 			}
@@ -630,12 +658,12 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Cleanup
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 // Benchmark tests
 func BenchmarkWrite(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	data := []byte("benchmark test data")
@@ -643,27 +671,27 @@ func BenchmarkWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.Write(credName, data)
+		Write(credName, data)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func BenchmarkRead(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	credName := "test-benchmark-read"
-	cm.Write(credName, []byte("benchmark test data"))
+	Write(credName, []byte("benchmark test data"))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.Read(credName)
+		Read(credName)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func BenchmarkWriteKey(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	credName := "test-benchmark-writekey"
@@ -671,27 +699,27 @@ func BenchmarkWriteKey(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.WriteKey(credName, key)
+		WriteKey(credName, key)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func BenchmarkReadKey(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	credName := "test-benchmark-readkey"
-	cm.WriteKey(credName, "sk-test-key")
+	WriteKey(credName, "sk-test-key")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.ReadKey(credName)
+		ReadKey(credName)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func BenchmarkWriteUserCred(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	credName := "test-benchmark-writeusercred"
@@ -699,22 +727,22 @@ func BenchmarkWriteUserCred(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.WriteUserCred(credName, cred)
+		WriteUserCred(credName, cred)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }
 
 func BenchmarkReadUserCred(b *testing.B) {
-	cm, cleanup := setupTestEnv(&testing.T{})
+	cleanup := setupTestEnv(&testing.T{})
 	defer cleanup()
 
 	credName := "test-benchmark-readusercred"
 	cred := NewUnPw("benchuser", "benchpass")
-	cm.WriteUserCred(credName, cred)
+	WriteUserCred(credName, cred)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cm.ReadUserCred(credName)
+		ReadUserCred(credName)
 	}
-	cm.Delete(credName)
+	Delete(credName)
 }

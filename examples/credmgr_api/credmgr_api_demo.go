@@ -1,4 +1,4 @@
-// Example demonstrating the new credmgr v2.0.0 API
+// Example demonstrating the new credmgr v3.0.0 OO API
 package main
 
 import (
@@ -9,15 +9,21 @@ import (
 )
 
 func main() {
-	fmt.Println("=== credmgr API v2.0.0 Demo ===")
+	fmt.Println("=== credmgr API v3.0.0 Demo ===")
+
+	// Create a credential manager instance using the default storage
+	cm, err := credmgr.Default()
+	if err != nil {
+		log.Fatalf("Failed to create credential manager: %v", err)
+	}
 
 	// 1. Raw bytes API - Read/Write
-	fmt.Println("1. Raw bytes API (Read/Write):")
+	fmt.Println("\n1. Raw bytes API (Read/Write):")
 	rawData := []byte("binary-data-12345")
-	if err := credmgr.Write("raw-credential", rawData); err != nil {
+	if err := cm.Write("raw-credential", rawData); err != nil {
 		log.Fatalf("Write failed: %v", err)
 	}
-	retrieved, err := credmgr.Read("raw-credential")
+	retrieved, err := cm.Read("raw-credential")
 	if err != nil {
 		log.Fatalf("Read failed: %v", err)
 	}
@@ -28,10 +34,10 @@ func main() {
 	// 2. Key/token API - ReadKey/WriteKey
 	fmt.Println("\n2. Key/token API (ReadKey/WriteKey):")
 	apiKey := "sk-proj-1234567890abcdef"
-	if err := credmgr.WriteKey("api-key-demo", apiKey); err != nil {
+	if err := cm.WriteKey("api-key-demo", apiKey); err != nil {
 		log.Fatalf("WriteKey failed: %v", err)
 	}
-	retrievedKey, err := credmgr.ReadKey("api-key-demo")
+	retrievedKey, err := cm.ReadKey("api-key-demo")
 	if err != nil {
 		log.Fatalf("ReadKey failed: %v", err)
 	}
@@ -42,10 +48,10 @@ func main() {
 	// 3. Username/Password API - ReadUserCred/WriteUserCred
 	fmt.Println("\n3. Username/Password API (ReadUserCred/WriteUserCred):")
 	cred := credmgr.NewUnPw("john.doe", "secretpass123")
-	if err := credmgr.WriteUserCred("user-cred-demo", cred); err != nil {
+	if err := cm.WriteUserCred("user-cred-demo", cred); err != nil {
 		log.Fatalf("WriteUserCred failed: %v", err)
 	}
-	retrievedCred, err := credmgr.ReadUserCred("user-cred-demo")
+	retrievedCred, err := cm.ReadUserCred("user-cred-demo")
 	if err != nil {
 		log.Fatalf("ReadUserCred failed: %v", err)
 	}
@@ -55,7 +61,7 @@ func main() {
 
 	// 4. List all credentials
 	fmt.Println("\n4. List all credentials:")
-	names, err := credmgr.List()
+	names, err := cm.List()
 	if err != nil {
 		log.Fatalf("List failed: %v", err)
 	}
@@ -66,7 +72,7 @@ func main() {
 	// Cleanup
 	fmt.Println("\n5. Cleanup:")
 	for _, name := range []string{"raw-credential", "api-key-demo", "user-cred-demo"} {
-		if err := credmgr.Delete(name); err != nil {
+		if err := cm.Delete(name); err != nil {
 			log.Printf("Warning: failed to delete %s: %v", name, err)
 		} else {
 			fmt.Printf("   ✓ Deleted: %s\n", name)

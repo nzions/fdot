@@ -5,7 +5,7 @@
 // # Storage Architecture
 //
 // Credentials are stored in an AES-256-GCM encrypted file:
-//   - Location: ~/.fdot/credentials.enc
+//   - Location: ~/.fdot/credentials.enc (or custom path)
 //   - Format: JSON map encrypted with AES-256-GCM
 //   - Permissions: 0600 (owner read/write only)
 //
@@ -17,31 +17,6 @@
 //   - Generate: openssl rand -hex 32
 //
 // If CREDMGR_KEY is not set or invalid, credential operations will fail.
-//
-// # Security Model
-//
-// This provides file-based credential persistence with these properties:
-//   - Encrypted at rest (AES-256-GCM with authentication)
-//   - Per-user isolation (file permissions 0600)
-//   - Key management is user's responsibility
-//   - Protection level: Similar to Windows Credential Manager
-//
-// Does NOT protect against:
-//   - Root/administrator access
-//   - Attackers who obtain both the encrypted file AND the key
-//   - Memory dumps while credentials are in use
-//
-// # Design Rationale
-//
-// Previous implementation used Linux kernel keyrings, which provide excellent
-// security but do NOT persist across reboots (they are RAM-only). This file-based
-// approach trades some security for persistence, matching Windows behavior.
-//
-// For development/convenience credentials (API keys, tokens, etc.), this provides
-// a reasonable balance. For high-security credentials, consider using kernel keyrings
-// (session-only) or prompting for a master password.
-//
-// See docs/linux-kernel-keyring.bak/ for the archived kernel keyring implementation.
 package credmgr
 
 import (
@@ -50,7 +25,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -62,7 +36,10 @@ import (
 	"github.com/nzions/fdot/pkg/fdotconfig"
 )
 
-var (
+// linuxCredManager implements CredManager for Linux using AES-encrypted file storage
+type linuxCredManager struct {
+	credFilePath string
+
 	// In-memory cache of decrypted credentials
 	credCache      map[string][]byte
 	credCacheMutex sync.RWMutex
@@ -72,65 +49,90 @@ var (
 	encryptionKey []byte
 	keyInitOnce   sync.Once
 	keyInitError  error
-)
+}
+
+// newCredManager creates a new CredManager for Linux
+func newCredManager(path string) (CredManager, error) {
+	if path == "" {
+		// Use default path
+		return defaultCredManager()
+	}
+
+	// Use specified path
+	return &linuxCredManager{
+		credFilePath: path,
+		credCache:    make(map[string][]byte),
+	}, nil
+}
+
+// defaultCredManager returns the default CredManager for Linux
+func defaultCredManager() (CredManager, error) {
+	// Get default path
+	hd, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+	defaultPath := filepath.Join(hd, ".local/credmgr", "credentials.enc")
+
+	// Create parent directory if it doesn't exist
+	parentDir := filepath.Dir(defaultPath)
+	if err := fdh.CheckCreateDir(parentDir); err != nil {
+		return nil, fmt.Errorf("failed to create credential directory: %w", err)
+	}
+
+	return &linuxCredManager{
+		credFilePath: defaultPath,
+		credCache:    make(map[string][]byte),
+	}, nil
+}
 
 // getEncryptionKey loads and validates the encryption key from environment variable
-func getEncryptionKey() ([]byte, error) {
-	keyInitOnce.Do(func() {
+func (cm *linuxCredManager) getEncryptionKey() ([]byte, error) {
+	cm.keyInitOnce.Do(func() {
 		keyHex := os.Getenv(fdotconfig.CredMgrEnvVarKey)
 		if keyHex == "" {
-			keyInitError = fmt.Errorf("%s environment variable not set", fdotconfig.CredMgrEnvVarKey)
+			cm.keyInitError = fmt.Errorf("%s environment variable not set", fdotconfig.CredMgrEnvVarKey)
 			return
 		}
 
 		key, err := hex.DecodeString(keyHex)
 		if err != nil {
-			keyInitError = fmt.Errorf("invalid %s format (expected 64 hex chars): %w", fdotconfig.CredMgrEnvVarKey, err)
+			cm.keyInitError = fmt.Errorf("invalid %s format (expected 64 hex chars): %w", fdotconfig.CredMgrEnvVarKey, err)
 			return
 		}
 
 		if len(key) != 32 {
-			keyInitError = fmt.Errorf("invalid %s length (expected 32 bytes, got %d)", fdotconfig.CredMgrEnvVarKey, len(key))
+			cm.keyInitError = fmt.Errorf("invalid %s length (expected 32 bytes, got %d)", fdotconfig.CredMgrEnvVarKey, len(key))
 			return
 		}
 
-		encryptionKey = key
+		cm.encryptionKey = key
 	})
 
-	return encryptionKey, keyInitError
-}
-
-// getCredFilePath returns the path to the encrypted credentials file
-func getCredFilePath() (string, error) {
-	return fdotconfig.GetCredFilePath()
+	return cm.encryptionKey, cm.keyInitError
 }
 
 // loadCredentials reads and decrypts the credentials file
-func loadCredentials() (map[string][]byte, error) {
-	credFile, err := getCredFilePath()
-	if err != nil {
-		return nil, err
-	}
-
+func (cm *linuxCredManager) loadCredentials() (map[string][]byte, error) {
 	// If file doesn't exist, return empty map
-	if _, err := os.Stat(credFile); os.IsNotExist(err) {
+	if _, err := os.Stat(cm.credFilePath); os.IsNotExist(err) {
 		return make(map[string][]byte), nil
 	}
 
 	// Read encrypted file
-	encryptedData, err := os.ReadFile(credFile)
+	encrypted, err := os.ReadFile(cm.credFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read credentials file: %w", err)
 	}
 
 	// Get encryption key
-	key, err := getEncryptionKey()
+	key, err := cm.getEncryptionKey()
 	if err != nil {
 		return nil, err
 	}
 
 	// Decrypt
-	plaintext, err := decryptAESGCM(encryptedData, key)
+	plaintext, err := cm.decryptAESGCM(encrypted, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
 	}
@@ -138,20 +140,16 @@ func loadCredentials() (map[string][]byte, error) {
 	// Unmarshal JSON
 	var creds map[string][]byte
 	if err := json.Unmarshal(plaintext, &creds); err != nil {
-		return nil, fmt.Errorf("failed to parse credentials: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal credentials: %w", err)
 	}
 
 	return creds, nil
 }
 
 // saveCredentials encrypts and writes the credentials file
-func saveCredentials(creds map[string][]byte) error {
-	credFile, err := getCredFilePath()
-	if err != nil {
-		return err
-	}
-
-	if err := fdh.CheckCreateDir(filepath.Dir(credFile)); err != nil {
+func (cm *linuxCredManager) saveCredentials(creds map[string][]byte) error {
+	// Ensure directory exists
+	if err := fdh.CheckCreateDir(filepath.Dir(cm.credFilePath)); err != nil {
 		return err
 	}
 
@@ -162,27 +160,46 @@ func saveCredentials(creds map[string][]byte) error {
 	}
 
 	// Get encryption key
-	key, err := getEncryptionKey()
+	key, err := cm.getEncryptionKey()
 	if err != nil {
 		return err
 	}
 
 	// Encrypt
-	encrypted, err := encryptAESGCM(plaintext, key)
+	encrypted, err := cm.encryptAESGCM(plaintext, key)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt credentials: %w", err)
 	}
 
 	// Write to file with secure permissions
-	if err := os.WriteFile(credFile, encrypted, 0600); err != nil {
+	if err := os.WriteFile(cm.credFilePath, encrypted, 0600); err != nil {
 		return fmt.Errorf("failed to write credentials file: %w", err)
 	}
 
 	return nil
 }
 
-// encryptAESGCM encrypts data using AES-256-GCM
-func encryptAESGCM(plaintext, key []byte) ([]byte, error) {
+// getCache returns the in-memory credential cache, loading it if necessary
+func (cm *linuxCredManager) getCache() (map[string][]byte, error) {
+	var loadErr error
+	cm.credCacheInit.Do(func() {
+		var err error
+		cm.credCache, err = cm.loadCredentials()
+		if err != nil {
+			loadErr = err
+			return
+		}
+	})
+
+	if loadErr != nil {
+		return nil, loadErr
+	}
+
+	return cm.credCache, nil
+}
+
+// encryptAESGCM encrypts plaintext using AES-256-GCM
+func (cm *linuxCredManager) encryptAESGCM(plaintext, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -193,19 +210,17 @@ func encryptAESGCM(plaintext, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// Create nonce
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
 
-	// Encrypt and append nonce
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 	return ciphertext, nil
 }
 
-// decryptAESGCM decrypts data using AES-256-GCM
-func decryptAESGCM(ciphertext, key []byte) ([]byte, error) {
+// decryptAESGCM decrypts ciphertext using AES-256-GCM
+func (cm *linuxCredManager) decryptAESGCM(ciphertext, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -218,13 +233,10 @@ func decryptAESGCM(ciphertext, key []byte) ([]byte, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return nil, errors.New("ciphertext too short")
+		return nil, fmt.Errorf("ciphertext too short")
 	}
 
-	// Extract nonce and ciphertext
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-
-	// Decrypt
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, err
@@ -233,121 +245,113 @@ func decryptAESGCM(ciphertext, key []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// getCache returns the credential cache, initializing it if needed
-func getCache() (map[string][]byte, error) {
-	var initErr error
-	credCacheInit.Do(func() {
-		var err error
-		credCache, err = loadCredentials()
-		if err != nil {
-			initErr = err
-			return
-		}
-	})
+// Implementation of CredManager interface methods
 
-	if initErr != nil {
-		return nil, initErr
-	}
-
-	return credCache, nil
-}
-
-// readCredential reads a credential from the cache
-func readCredential(name string) ([]byte, error) {
-	cache, err := getCache()
+// Read retrieves raw credential bytes by name.
+func (cm *linuxCredManager) Read(name string) ([]byte, error) {
+	cache, err := cm.getCache()
 	if err != nil {
 		return nil, err
 	}
 
-	credCacheMutex.RLock()
-	defer credCacheMutex.RUnlock()
+	cm.credCacheMutex.RLock()
+	defer cm.credCacheMutex.RUnlock()
 
-	value, exists := cache[name]
+	data, exists := cache[name]
 	if !exists {
 		return nil, fmt.Errorf("credential %q %w", name, ErrNotFound)
 	}
 
-	return value, nil
+	return data, nil
 }
 
-// writeCredential writes a credential to cache and persists to disk
-func writeCredential(name string, value []byte) error {
-	cache, err := getCache()
+// Write stores raw credential bytes with the given name.
+func (cm *linuxCredManager) Write(name string, data []byte) error {
+	cache, err := cm.getCache()
 	if err != nil {
 		return err
 	}
 
-	credCacheMutex.Lock()
-	cache[name] = value
-	credCacheMutex.Unlock()
+	cm.credCacheMutex.Lock()
+	cache[name] = data
+	cm.credCacheMutex.Unlock()
 
 	// Save to disk
-	credCacheMutex.RLock()
-	cacheCopy := make(map[string][]byte, len(cache))
-	for k, v := range cache {
-		cacheCopy[k] = v
-	}
-	credCacheMutex.RUnlock()
-
-	return saveCredentials(cacheCopy)
-}
-
-// deleteCredential removes a credential from cache and persists to disk
-func deleteCredential(name string) error {
-	cache, err := getCache()
-	if err != nil {
-		return err
-	}
-
-	credCacheMutex.Lock()
-	if _, exists := cache[name]; !exists {
-		credCacheMutex.Unlock()
-		return fmt.Errorf("credential %q %w", name, ErrNotFound)
-	}
-	delete(cache, name)
-	credCacheMutex.Unlock()
-
-	// Save to disk
-	credCacheMutex.RLock()
+	cm.credCacheMutex.RLock()
 	cacheCopy := make(map[string][]byte, len(cache))
 	maps.Copy(cacheCopy, cache)
-	credCacheMutex.RUnlock()
+	cm.credCacheMutex.RUnlock()
 
-	return saveCredentials(cacheCopy)
+	return cm.saveCredentials(cacheCopy)
 }
 
-// listCredentials returns all credential names
-func listCredentials() ([]string, error) {
-	cache, err := getCache()
+// ReadKey retrieves a credential key as a string.
+func (cm *linuxCredManager) ReadKey(name string) (string, error) {
+	data, err := cm.Read(name)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// WriteKey stores a string credential key.
+func (cm *linuxCredManager) WriteKey(name, key string) error {
+	return cm.Write(name, []byte(key))
+}
+
+// ReadUserCred retrieves a username/password credential.
+func (cm *linuxCredManager) ReadUserCred(name string) (UserCred, error) {
+	data, err := cm.Read(name)
 	if err != nil {
 		return nil, err
 	}
-
-	credCacheMutex.RLock()
-	defer credCacheMutex.RUnlock()
-
-	names := make([]string, 0, len(cache))
-	for name := range cache {
-		names = append(names, name)
-	}
-
-	return names, nil
+	return unmarshalUnPw(data)
 }
 
-// deleteDatabaseCredential removes the entire credential database file and clears the cache
-func deleteDatabaseCredential() error {
-	credFile, err := getCredFilePath()
+// WriteUserCred stores a username/password credential.
+func (cm *linuxCredManager) WriteUserCred(name string, cred UserCred) error {
+	// Type assert to access marshal method
+	if uc, ok := cred.(*obfuscatedUserCred); ok {
+		return cm.Write(name, uc.marshal())
+	}
+	// Fallback: reconstruct from interface
+	reconstructed := newObfuscatedUserCred(cred.Username(), cred.Password())
+	return cm.Write(name, reconstructed.marshal())
+}
+
+// Delete removes a credential by name.
+func (cm *linuxCredManager) Delete(name string) error {
+	cache, err := cm.getCache()
 	if err != nil {
 		return err
 	}
 
+	cm.credCacheMutex.Lock()
+	if _, exists := cache[name]; !exists {
+		cm.credCacheMutex.Unlock()
+		return fmt.Errorf("credential %q %w", name, ErrNotFound)
+	}
+	delete(cache, name)
+	cm.credCacheMutex.Unlock()
+
+	// Save to disk
+	cm.credCacheMutex.RLock()
+	cacheCopy := make(map[string][]byte, len(cache))
+	maps.Copy(cacheCopy, cache)
+	cm.credCacheMutex.RUnlock()
+
+	return cm.saveCredentials(cacheCopy)
+}
+
+// DeleteDB removes the entire credential database.
+func (cm *linuxCredManager) DeleteDB() error {
 	// Clear the in-memory cache first
-	credCacheMutex.Lock()
-	credCache = make(map[string][]byte)
-	credCacheMutex.Unlock()
+	cm.credCacheMutex.Lock()
+	cm.credCache = make(map[string][]byte)
+	cm.credCacheMutex.Unlock()
 
 	// Remove the encrypted file if it exists
-	if _, err := os.Stat(credFile); err != nil {
+	if _, err := os.Stat(cm.credFilePath); err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist, nothing to delete
 			return nil
@@ -355,9 +359,27 @@ func deleteDatabaseCredential() error {
 		return fmt.Errorf("failed to stat credentials file: %w", err)
 	}
 
-	if err := os.Remove(credFile); err != nil {
+	if err := os.Remove(cm.credFilePath); err != nil {
 		return fmt.Errorf("failed to delete credentials database: %w", err)
 	}
 
 	return nil
+}
+
+// List returns all credential names.
+func (cm *linuxCredManager) List() ([]string, error) {
+	cache, err := cm.getCache()
+	if err != nil {
+		return nil, err
+	}
+
+	cm.credCacheMutex.RLock()
+	defer cm.credCacheMutex.RUnlock()
+
+	names := make([]string, 0, len(cache))
+	for name := range cache {
+		names = append(names, name)
+	}
+
+	return names, nil
 }

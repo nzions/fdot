@@ -44,11 +44,19 @@ func init() {
 		panicMsg("networkDir", err)
 	}
 
+	// create credential manager with custom path
+	credFilePath := filepath.Join(dataDir, "credentials.enc")
+	cm, err := credmgr.New(credFilePath)
+	if err != nil {
+		panicMsg("credmgr.New", err)
+	}
+
 	CurrentUser = &FUser{
-		Username:   user.Username,
-		HomeDir:    homeDir,
-		DataDir:    dataDir,
-		NetworkDir: networkDir,
+		Username:    user.Username,
+		HomeDir:     homeDir,
+		DataDir:     dataDir,
+		NetworkDir:  networkDir,
+		CredManager: cm,
 	}
 
 	// Register as the path provider for credential operations
@@ -56,14 +64,15 @@ func init() {
 }
 
 type FUser struct {
-	Username   string
-	HomeDir    string
-	DataDir    string
-	NetworkDir string
+	Username    string
+	HomeDir     string
+	DataDir     string
+	NetworkDir  string
+	CredManager credmgr.CredManager // OO credential manager instance
 }
 
 func (u *FUser) BigKey() (string, error) {
-	bigKey, err := credmgr.ReadKey(fdotconfig.BigKeySecretName)
+	bigKey, err := u.CredManager.ReadKey(fdotconfig.BigKeySecretName)
 	if err == nil {
 		return bigKey, nil
 	}
@@ -74,14 +83,14 @@ func (u *FUser) BigKey() (string, error) {
 		return "", err
 	}
 	bigKey = hex.EncodeToString(randomBytes)
-	if err := credmgr.WriteKey(fdotconfig.BigKeySecretName, bigKey); err != nil {
+	if err := u.CredManager.WriteKey(fdotconfig.BigKeySecretName, bigKey); err != nil {
 		return "", err
 	}
 	return bigKey, nil
 }
 
 func (u *FUser) SSHCreds() (credmgr.UserCred, error) {
-	cred, err := credmgr.ReadUserCred(fdotconfig.SSHCredSecretName)
+	cred, err := u.CredManager.ReadUserCred(fdotconfig.SSHCredSecretName)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +99,7 @@ func (u *FUser) SSHCreds() (credmgr.UserCred, error) {
 
 func (u *FUser) SetSSHCreds(username, password string) error {
 	cred := credmgr.NewUnPw(username, password)
-	return credmgr.WriteUserCred(fdotconfig.SSHCredSecretName, cred)
+	return u.CredManager.WriteUserCred(fdotconfig.SSHCredSecretName, cred)
 }
 
 // CredFilePath returns the path to the encrypted credentials file
