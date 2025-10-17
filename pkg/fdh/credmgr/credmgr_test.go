@@ -11,18 +11,18 @@ import (
 func setupTestEnv(t *testing.T) func() {
 	// Save original env var if it exists
 	originalKey := os.Getenv("CREDMGR_KEY")
-	
+
 	// Set a test key (32 bytes = 64 hex chars)
 	testKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	if err := os.Setenv("CREDMGR_KEY", testKey); err != nil {
 		t.Fatalf("Failed to set CREDMGR_KEY: %v", err)
 	}
-	
+
 	// Clean up any existing credentials file from different key
 	// This prevents "failed to decrypt" errors when switching between test runs
 	credFile := os.ExpandEnv("$HOME/.fdot/credentials.enc")
 	os.Remove(credFile) // Ignore errors - file might not exist
-	
+
 	// Return cleanup function
 	return func() {
 		if originalKey != "" {
@@ -556,7 +556,7 @@ func TestConcurrentAccess(t *testing.T) {
 	defer cleanup()
 
 	credName := "test-concurrent"
-	
+
 	// Write initial data
 	if err := Write(credName, []byte("initial")); err != nil {
 		t.Fatalf("Initial write failed: %v", err)
