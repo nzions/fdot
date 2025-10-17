@@ -36,15 +36,20 @@ func WriteKey(name, key string) error
 ```
 
 ### Username/Password API
-For structured username/password credentials:
+For structured username/password credentials with memory obfuscation:
 ```go
-type UnPw struct { ... }
-func NewUnPw(username, password string) *UnPw
-func (u *UnPw) Username() string
-func (u *UnPw) Password() string
-func ReadUserCred(name string) (*UnPw, error)
-func WriteUserCred(name string, cred *UnPw) error
+// UserCred is the interface for username/password credentials
+type UserCred interface {
+    Username() string
+    Password() string
+}
+
+func NewUnPw(username, password string) UserCred
+func ReadUserCred(name string) (UserCred, error)
+func WriteUserCred(name string, cred UserCred) error
 ```
+
+**Security Note:** Passwords are XOR-obfuscated in memory to prevent basic memory dumps from exposing plaintext. This is NOT cryptographic protection - stored credentials are protected by AES-256-GCM encryption (Linux) or OS credential manager (Windows).
 
 ### Management
 ```go

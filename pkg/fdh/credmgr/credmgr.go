@@ -45,7 +45,7 @@ func WriteKey(name, key string) error {
 }
 
 // ReadUserCred retrieves a username/password credential.
-func ReadUserCred(name string) (*UnPw, error) {
+func ReadUserCred(name string) (UserCred, error) {
 	data, err := Read(name)
 	if err != nil {
 		return nil, err
@@ -54,8 +54,14 @@ func ReadUserCred(name string) (*UnPw, error) {
 }
 
 // WriteUserCred stores a username/password credential.
-func WriteUserCred(name string, cred *UnPw) error {
-	return Write(name, cred.marshal())
+func WriteUserCred(name string, cred UserCred) error {
+	// Type assert to access marshal method
+	if uc, ok := cred.(*obfuscatedUserCred); ok {
+		return Write(name, uc.marshal())
+	}
+	// Fallback: reconstruct from interface
+	reconstructed := newObfuscatedUserCred(cred.Username(), cred.Password())
+	return Write(name, reconstructed.marshal())
 }
 
 // Delete removes a credential by name.
