@@ -29,7 +29,7 @@ Replaced Linux kernel keyring implementation with AES-256-GCM encrypted file sto
 openssl rand -hex 32
 
 # Set in environment (add to ~/.bashrc or ~/.profile)
-export FDOT_CREDENTIAL_KEY="<your-64-character-hex-key>"
+export CREDMGR_KEY="<your-64-character-hex-key>"
 ```
 
 ### Testing
@@ -61,7 +61,7 @@ go build -o bin/credmgr ./cmd/credmgr
 
 2. **`pkg/fdh/credmgr/README.md`** - Updated documentation
    - Changed Linux backend description
-   - Added setup instructions for FDOT_CREDENTIAL_KEY
+   - Added setup instructions for CREDMGR_KEY
    - Updated security model explanation
 
 ## Files Backed Up
@@ -113,7 +113,7 @@ This knowledge is preserved in `docs/linux-kernel-keyring.bak/`.
 - Read: Decryption and retrieval successful
 - List: All credential names returned
 - Delete: Credentials removed and file updated
-- Error handling: Proper errors when `FDOT_CREDENTIAL_KEY` not set
+- Error handling: Proper errors when `CREDMGR_KEY` not set
 - File format: Encrypted data (verified with `od`)
 - Persistence: File survives across sessions
 
@@ -121,7 +121,7 @@ This knowledge is preserved in `docs/linux-kernel-keyring.bak/`.
 
 Users need to:
 1. Generate their encryption key: `openssl rand -hex 32`
-2. Add `export FDOT_CREDENTIAL_KEY="..."` to their shell profile
+2. Add `export CREDMGR_KEY="..."` to their shell profile
 3. Rebuild applications using credmgr
 
 ## Compatibility

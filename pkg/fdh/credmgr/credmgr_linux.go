@@ -11,12 +11,12 @@
 //
 // # Encryption Key Source
 //
-// The encryption key MUST be provided via the FDOT_CREDENTIAL_KEY environment variable:
+// The encryption key MUST be provided via the CREDMGR_KEY environment variable:
 //   - Format: 64 hex characters (32 bytes)
-//   - Example: export FDOT_CREDENTIAL_KEY="0123456789abcdef..."
+//   - Example: export CREDMGR_KEY="0123456789abcdef..."
 //   - Generate: openssl rand -hex 32
 //
-// If FDOT_CREDENTIAL_KEY is not set or invalid, credential operations will fail.
+// If CREDMGR_KEY is not set or invalid, credential operations will fail.
 //
 // # Security Model
 //
@@ -53,9 +53,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/nzions/fdot/pkg/fdotconfig"
 )
 
 var (
@@ -73,20 +76,20 @@ var (
 // getEncryptionKey loads and validates the encryption key from environment variable
 func getEncryptionKey() ([]byte, error) {
 	keyInitOnce.Do(func() {
-		keyHex := os.Getenv("FDOT_CREDENTIAL_KEY")
+		keyHex := os.Getenv(fdotconfig.CredMgrEnvVar)
 		if keyHex == "" {
-			keyInitError = errors.New("FDOT_CREDENTIAL_KEY environment variable not set")
+			keyInitError = fmt.Errorf("%s environment variable not set", fdotconfig.CredMgrEnvVar)
 			return
 		}
 
 		key, err := hex.DecodeString(keyHex)
 		if err != nil {
-			keyInitError = fmt.Errorf("invalid FDOT_CREDENTIAL_KEY format (expected 64 hex chars): %w", err)
+			keyInitError = fmt.Errorf("invalid %s format (expected 64 hex chars): %w", fdotconfig.CredMgrEnvVar, err)
 			return
 		}
 
 		if len(key) != 32 {
-			keyInitError = fmt.Errorf("invalid FDOT_CREDENTIAL_KEY length (expected 32 bytes, got %d)", len(key))
+			keyInitError = fmt.Errorf("invalid %s length (expected 32 bytes, got %d)", fdotconfig.CredMgrEnvVar, len(key))
 			return
 		}
 
@@ -327,9 +330,7 @@ func deleteCredential(name string) error {
 	// Save to disk
 	credCacheMutex.RLock()
 	cacheCopy := make(map[string][]byte, len(cache))
-	for k, v := range cache {
-		cacheCopy[k] = v
-	}
+	maps.Copy(cacheCopy, cache)
 	credCacheMutex.RUnlock()
 
 	return saveCredentials(cacheCopy)

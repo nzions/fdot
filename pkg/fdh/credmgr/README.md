@@ -44,7 +44,7 @@ func WriteString(name, value string) error
 ### Linux  
 - **Backend**: AES-256-GCM encrypted file storage
 - **Storage**: `~/.local/share/fdot/credentials.enc` (file permissions: 0600)
-- **Encryption Key**: Environment variable `FDOT_CREDENTIAL_KEY` (64 hex chars)
+- **Encryption Key**: Environment variable `CREDMGR_KEY` (64 hex chars)
 - **Persistence**: File-based (survives reboots)
 - **Security**: AES-256-GCM authenticated encryption
 
@@ -59,7 +59,7 @@ First, generate and set your encryption key:
 openssl rand -hex 32
 
 # Set it in your environment (add to ~/.bashrc or ~/.profile)
-export FDOT_CREDENTIAL_KEY="your-64-hex-character-key-here"
+export CREDMGR_KEY="your-64-hex-character-key-here"
 ```
 
 ### Example Code
@@ -97,7 +97,7 @@ names, err := credmgr.List()
 **Encryption:**
 - Algorithm: AES-256-GCM (Galois/Counter Mode)
 - Key size: 256 bits (32 bytes)
-- Key source: `FDOT_CREDENTIAL_KEY` environment variable
+- Key source: `CREDMGR_KEY` environment variable
 - Format: 64 hexadecimal characters
 - Authenticated encryption: Protects against tampering
 
