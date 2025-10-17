@@ -8,6 +8,46 @@ This is a Go project using Go 1.24.4 with standard project structure:
 
 ## Go Development Guidelines
 
+### Code Reuse & Exploration (CRITICAL - Read This First!)
+**BEFORE writing ANY new code, you MUST:**
+
+1. **Search for existing implementations**
+   - Use `semantic_search` to find similar functionality in the codebase
+   - Use `grep_search` to find existing functions, types, or patterns
+   - Use `list_code_usages` to see how similar features are implemented
+   - Check if utility functions already exist in `pkg/` packages
+
+2. **Analyze existing code patterns**
+   - Read existing files to understand established patterns
+   - Look for helper functions that can be reused
+   - Check if interfaces or types already exist that can be extended
+   - Examine test files for usage examples
+
+3. **Reuse before reimplementing**
+   - If a function/type exists that does 80% of what you need, extend or compose it
+   - Extract common logic into shared helpers rather than duplicating
+   - Use existing error types, constants, and patterns
+   - Import from existing packages instead of copy-pasting code
+
+4. **When you must write new code**
+   - Ensure it's truly needed and not duplicating existing functionality
+   - Make it reusable by others (proper abstraction, good naming)
+   - Place it in the appropriate location for future reuse
+   - Document why new code was needed instead of reusing existing
+
+**DRY (Don't Repeat Yourself) Examples:**
+- ❌ WRONG: Copy-paste similar logic across multiple functions
+- ✅ RIGHT: Extract common logic into a shared helper function
+- ❌ WRONG: Reimplement error handling patterns
+- ✅ RIGHT: Use existing error types and wrapping patterns
+- ❌ WRONG: Create new structs/types when existing ones have needed fields
+- ✅ RIGHT: Extend or compose existing types
+
+**Required workflow:**
+```
+User Request → Search Existing Code → Analyze Patterns → Reuse/Extend → (Only if needed) Write New
+```
+
 ### Code Style & Standards
 - Follow official Go formatting with `gofmt`
 - Use `golint` and `go vet` for code quality
@@ -128,7 +168,9 @@ When creating new Go files:
 - Deep nesting (prefer early returns)
 
 # CRITICAL section
-- ALWAYS DRY, KISS, YAGNI
+- ALWAYS search for existing code BEFORE writing new code (use semantic_search, grep_search, list_code_usages)
+- ALWAYS reuse existing functions, types, patterns, and utilities
+- ALWAYS DRY, KISS, YAGNI - if it exists, use it; if it's simple, keep it simple; if you don't need it, don't build it
 - ALWAYS prioritize readability and maintainability
 - ALWAYS use latest go version features
 - ALWAYS use go 1.22+ web mux
@@ -137,4 +179,6 @@ When creating new Go files:
 - ALWAYS follow strict semantic versioning (SemVer 2.0.0)
 - ALWAYS validate new Go files with `go build` or `get_errors` tool immediately after creation
 - NEVER duplicate the `package` declaration in Go files (it must appear EXACTLY ONCE)
+- NEVER write new code when existing code can be reused or extended
+- NEVER copy-paste code - extract to shared functions instead
 - NEVER use deprecated or outdated libraries
