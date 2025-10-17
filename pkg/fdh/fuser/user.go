@@ -3,11 +3,9 @@ package fuser
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
-	"strings"
 
 	"github.com/nzions/fdot/pkg/fdh"
 	"github.com/nzions/fdot/pkg/fdh/credmgr"
@@ -62,7 +60,7 @@ type FUser struct {
 }
 
 func (u *FUser) BigKey() (string, error) {
-	bigKey, err := credmgr.ReadString(fdotconfig.BigKeySecretName)
+	bigKey, err := credmgr.ReadKey(fdotconfig.BigKeySecretName)
 	if err == nil {
 		return bigKey, nil
 	}
@@ -73,32 +71,23 @@ func (u *FUser) BigKey() (string, error) {
 		return "", err
 	}
 	bigKey = hex.EncodeToString(randomBytes)
-	if err := credmgr.WriteString(fdotconfig.BigKeySecretName, bigKey); err != nil {
+	if err := credmgr.WriteKey(fdotconfig.BigKeySecretName, bigKey); err != nil {
 		return "", err
 	}
 	return bigKey, nil
 }
 
 func (u *FUser) SSHCreds() (username, password string, err error) {
-	c, err := credmgr.Read(fdotconfig.SSHCredSecretName)
+	cred, err := credmgr.ReadUserCred(fdotconfig.SSHCredSecretName)
 	if err != nil {
 		return "", "", err
 	}
-
-	parts := strings.Split(string(c), ":")
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid credential format: expected 'username:password'")
-	}
-
-	un := parts[0]
-	pw := strings.Join(parts[1:], ":")
-	return un, pw, nil
+	return cred.Username(), cred.Password(), nil
 }
 
 func (u *FUser) SetSSHCreds(username, password string) error {
-	// Store credentials in the format: "username:password"
-	sshCreds := username + ":" + password
-	return credmgr.WriteString(fdotconfig.SSHCredSecretName, sshCreds)
+	cred := credmgr.NewUnPw(username, password)
+	return credmgr.WriteUserCred(fdotconfig.SSHCredSecretName, cred)
 }
 
 // CredFilePath returns the path to the encrypted credentials file

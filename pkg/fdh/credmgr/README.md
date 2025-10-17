@@ -19,18 +19,43 @@ pkg/fdh/credmgr/
 - **YAGNI**: Only essential credential operations
 - **Build Tags**: Compile-time platform selection
 
-## API
+## API (v2.0.0)
 
+### Raw Bytes API
+For binary data, encrypted content, or custom formats:
 ```go
-// Core operations
 func Read(name string) ([]byte, error)
 func Write(name string, data []byte) error
+```
+
+### Key/Token API
+For API keys, tokens, and string secrets:
+```go
+func ReadKey(name string) (string, error)
+func WriteKey(name, key string) error
+```
+
+### Username/Password API
+For structured username/password credentials:
+```go
+type UnPw struct { ... }
+func NewUnPw(username, password string) *UnPw
+func (u *UnPw) Username() string
+func (u *UnPw) Password() string
+func ReadUserCred(name string) (*UnPw, error)
+func WriteUserCred(name string, cred *UnPw) error
+```
+
+### Management
+```go
 func Delete(name string) error
 func List() ([]string, error)
+```
 
-// String convenience functions
-func ReadString(name string) (string, error)
-func WriteString(name, value string) error
+### Deprecated (use alternatives above)
+```go
+func ReadString(name string) (string, error)  // Use ReadKey
+func WriteString(name, value string) error     // Use WriteKey
 ```
 
 ## Platform Support
@@ -67,14 +92,24 @@ export CREDMGR_KEY="your-64-hex-character-key-here"
 ```go
 import "github.com/nzions/fdot/pkg/fdh/credmgr"
 
-// Store credential
-err := credmgr.WriteString("app-token", "secret123")
+// 1. Raw bytes (binary data, encrypted files, etc.)
+rawData := []byte("binary-data")
+err := credmgr.Write("raw-cred", rawData)
+data, err := credmgr.Read("raw-cred")
 
-// Retrieve credential
-token, err := credmgr.ReadString("app-token")
+// 2. Keys/tokens (API keys, tokens, secrets)
+err := credmgr.WriteKey("api-token", "sk-proj-123abc")
+token, err := credmgr.ReadKey("api-token")
+
+// 3. Username/Password credentials
+cred := credmgr.NewUnPw("username", "password")
+err := credmgr.WriteUserCred("ssh-creds", cred)
+cred, err := credmgr.ReadUserCred("ssh-creds")
+username := cred.Username()
+password := cred.Password()
 
 // Delete credential
-err := credmgr.Delete("app-token")
+err := credmgr.Delete("api-token")
 
 // List all credentials
 names, err := credmgr.List()

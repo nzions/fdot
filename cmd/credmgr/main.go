@@ -88,7 +88,7 @@ func handleGet() {
 
 	name := os.Args[2]
 
-	data, err := credmgr.ReadString(name)
+	data, err := credmgr.ReadKey(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading credential '%s': %v\n", name, err)
 		os.Exit(1)
@@ -108,7 +108,7 @@ func handleSet() {
 	// Join all remaining args as the data (allows spaces in data)
 	data := strings.Join(os.Args[3:], " ")
 
-	err := credmgr.WriteString(name, data)
+	err := credmgr.WriteKey(name, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error storing credential '%s': %v\n", name, err)
 		os.Exit(1)
