@@ -89,6 +89,30 @@ This is a Go project using Go 1.24.4 with standard project structure:
 - Use meaningful variable names even in short code snippets
 - Include necessary imports and package declarations
 
+### File Creation & Validation (CRITICAL)
+When creating new Go files:
+- NEVER duplicate the `package` declaration - it must appear EXACTLY ONCE at the top
+- File structure must be: package declaration → imports → code
+- IMMEDIATELY validate with `go build` or check for errors after file creation
+- Use `gofmt` to verify syntax correctness
+- Example of CORRECT file structure:
+  ```go
+  package mypackage
+  
+  import (
+      "fmt"
+  )
+  
+  func MyFunc() { }
+  ```
+- WRONG (duplicate package):
+  ```go
+  package mypackage  // WRONG - duplicate!
+  package mypackage
+  
+  import (
+  ```
+
 ### Common Patterns to Use
 - Interface-based design for testability
 - Constructor functions for complex types
@@ -111,4 +135,6 @@ This is a Go project using Go 1.24.4 with standard project structure:
 - ALWAYS use any instead of interface{}
 - ALWAYS compile binaries to `<project root>/bin/` directory
 - ALWAYS follow strict semantic versioning (SemVer 2.0.0)
+- ALWAYS validate new Go files with `go build` or `get_errors` tool immediately after creation
+- NEVER duplicate the `package` declaration in Go files (it must appear EXACTLY ONCE)
 - NEVER use deprecated or outdated libraries
