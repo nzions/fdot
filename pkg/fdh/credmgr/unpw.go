@@ -14,9 +14,9 @@ type UserCred interface {
 // obfuscatedUserCred represents a username/password credential with obfuscated password storage.
 // The password is XOR-encoded with a rotating key and base64-encoded to prevent trivial memory dumps.
 type obfuscatedUserCred struct {
-	username        string
-	obfuscatedPass  []byte // XOR-encoded password
-	obfuscationKey  []byte // Rotating key for XOR
+	username       string
+	obfuscatedPass []byte // XOR-encoded password
+	obfuscationKey []byte // Rotating key for XOR
 }
 
 // NewUnPw creates a new username/password credential with obfuscated password storage.
@@ -28,10 +28,10 @@ func NewUnPw(username, password string) UserCred {
 func newObfuscatedUserCred(username, password string) *obfuscatedUserCred {
 	// Generate a simple rotating key based on username
 	key := generateObfuscationKey(username)
-	
+
 	// XOR encode the password
 	obfuscated := xorEncode([]byte(password), key)
-	
+
 	return &obfuscatedUserCred{
 		username:       username,
 		obfuscatedPass: obfuscated,

@@ -90,7 +90,7 @@ func TestPasswordObfuscation(t *testing.T) {
 func TestPasswordObfuscationUniqueness(t *testing.T) {
 	// Different usernames should produce different obfuscation for same password
 	password := "samePassword123"
-	
+
 	cred1 := newObfuscatedUserCred("user1", password)
 	cred2 := newObfuscatedUserCred("user2", password)
 
@@ -119,9 +119,9 @@ func TestGenerateObfuscationKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			key := generateObfuscationKey(tt.username)
-			
+
 			if len(key) < tt.minLen {
-				t.Errorf("generateObfuscationKey(%q) length = %d, want >= %d", 
+				t.Errorf("generateObfuscationKey(%q) length = %d, want >= %d",
 					tt.username, len(key), tt.minLen)
 			}
 
@@ -270,7 +270,7 @@ func TestUnmarshalUnPw(t *testing.T) {
 				if err == nil {
 					t.Error("unmarshalUnPw() expected error, got nil")
 				} else if tt.errContains != "" && !bytes.Contains([]byte(err.Error()), []byte(tt.errContains)) {
-					t.Errorf("unmarshalUnPw() error = %q, want containing %q", 
+					t.Errorf("unmarshalUnPw() error = %q, want containing %q",
 						err.Error(), tt.errContains)
 				}
 				return

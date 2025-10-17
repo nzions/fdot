@@ -284,7 +284,7 @@ func readCredential(name string) ([]byte, error) {
 
 	value, exists := cache[name]
 	if !exists {
-		return nil, fmt.Errorf("credential %q not found", name)
+		return nil, fmt.Errorf("credential %q %w", name, ErrNotFound)
 	}
 
 	return value, nil
@@ -322,7 +322,7 @@ func deleteCredential(name string) error {
 	credCacheMutex.Lock()
 	if _, exists := cache[name]; !exists {
 		credCacheMutex.Unlock()
-		return fmt.Errorf("credential %q not found", name)
+		return fmt.Errorf("credential %q %w", name, ErrNotFound)
 	}
 	delete(cache, name)
 	credCacheMutex.Unlock()

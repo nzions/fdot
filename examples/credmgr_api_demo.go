@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== credmgr API v2.0.0 Demo ===\n")
+	fmt.Println("=== credmgr API v2.0.0 Demo ===")
 
 	// 1. Raw bytes API - Read/Write
 	fmt.Println("1. Raw bytes API (Read/Write):")
